@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { DoseRecord, Prescription, PatientProfile } = require('../models');
 const config = require('../config');
 const { zonedToUtc, localDate, addDays } = require('../utils/time');
@@ -5,8 +6,7 @@ const { HttpError } = require('../utils/http');
 const { notify } = require('./audit');
 const { inValues, trustedOperators } = require('../utils/mongo');
 
-const GENERATE_AHEAD_DAYS = 2;
-const MARK_EARLY_MINUTES = 60;
+const GENERATE_AHEAD_DAYS = 7;
 
 async function patientTz(patientId) {
   const p = await PatientProfile.findOne({ user: patientId }).select('timezone').lean();
@@ -108,7 +108,6 @@ async function recordStatus(dose, newStatus, user, note = '') {
   if (!allowed.includes(newStatus)) throw new HttpError(409, `Cannot change a ${dose.status} dose to ${newStatus}`);
   if (dose.status === 'missed' && !dose.autoMarked) throw new HttpError(409, 'A dose you marked as missed cannot be changed');
   const minutesUntil = (dose.scheduledAt.getTime() - Date.now()) / 60000;
-  if (minutesUntil > MARK_EARLY_MINUTES) throw new HttpError(409, `Doses can be recorded at most ${MARK_EARLY_MINUTES} minutes before the scheduled time`);
   if (newStatus === 'missed' && minutesUntil > 0) throw new HttpError(409, 'A dose cannot be marked missed before its scheduled time');
 
   const updated = await DoseRecord.findOneAndUpdate(
@@ -124,12 +123,21 @@ async function recordStatus(dose, newStatus, user, note = '') {
 }
 
 /**
- * Adherence = taken / (taken + missed + skipped) over doses scheduled in the past.
- * Excluded: future doses, past doses still pending (upcoming, not yet auto-missed), cancelled doses.
+ * Adherence includes recorded outcomes within the history window, including taken or skipped
+ * doses recorded before their scheduled time. Pending and cancelled doses are excluded.
  */
 async function adherence(patientId, { days = config.doseHistoryDays, prescriptionId = null } = {}) {
-  const match = { patient: patientId, scheduledAt: { $lte: new Date(), $gte: new Date(Date.now() - days * 86400000) } };
-  if (prescriptionId) match.prescription = prescriptionId;
+  const now = new Date();
+  const match = {
+    patient: new mongoose.Types.ObjectId(String(patientId)),
+    scheduledAt: { $gte: new Date(now.getTime() - days * 86400000) },
+    $or: [
+      { scheduledAt: { $lte: now } },
+      { status: 'taken' },
+      { status: 'skipped' },
+    ],
+  };
+  if (prescriptionId) match.prescription = new mongoose.Types.ObjectId(String(prescriptionId));
   const rows = await DoseRecord.aggregate([{ $match: match }, { $group: { _id: '$status', n: { $sum: 1 } } }]);
   const c = Object.fromEntries(rows.map((r) => [r._id, r.n]));
   const taken = c.taken || 0;
@@ -144,7 +152,7 @@ async function adherence(patientId, { days = config.doseHistoryDays, prescriptio
     pending: c.upcoming || 0,
     eligible,
     adherencePercent: eligible ? Math.round((taken / eligible) * 1000) / 10 : null,
-    formula: 'taken / (taken + missed + skipped) for doses scheduled in the past; future, pending and cancelled doses are excluded',
+    formula: 'taken / (taken + missed + skipped) for recorded doses in the history window; pending and cancelled doses are excluded',
   };
 }
 

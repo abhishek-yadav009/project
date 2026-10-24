@@ -4,6 +4,7 @@ const v = require('../utils/validate');
 const { audit, notify } = require('../services/audit');
 const { isVerifiedDoctor } = require('../services/access');
 const { inValues } = require('../utils/mongo');
+const { pagination, pageInfo } = require('../utils/pagination');
 
 const PERMISSION_KEYS = ['viewMedications', 'viewDoses', 'receiveAlerts', 'viewMedicalInfo'];
 
@@ -46,8 +47,13 @@ exports.list = async (req, res) => {
     throw new HttpError(403, 'Doctor verification is required to view patient authorizations');
   }
   const filter = req.user.role === 'patient' ? { patient: req.user._id } : { grantee: req.user._id };
-  const grants = await CareAuthorization.find(filter).sort({ updatedAt: -1 }).lean();
-  ok(res, await serialize(grants));
+  const paging = pagination(req.query);
+  const grantQuery = CareAuthorization.find(filter).sort({ updatedAt: -1 });
+  if (paging.enabled) grantQuery.skip(paging.skip).limit(paging.limit);
+  const grants = await grantQuery.lean();
+  if (!paging.enabled) return ok(res, await serialize(grants));
+  const [items, total] = await Promise.all([serialize(grants), CareAuthorization.countDocuments(filter)]);
+  ok(res, { items, pagination: pageInfo(total, paging) });
 };
 
 exports.invite = async (req, res) => {
@@ -153,13 +159,19 @@ exports.myPatients = async (req, res) => {
     throw new HttpError(403, 'Doctor verification is required before viewing patient records');
   }
   const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+  const paging = pagination(req.query);
   const grants = await CareAuthorization.find({ grantee: req.user._id, status: 'active' }).lean();
   const filter = { _id: inValues(grants.map((g) => g.patient)) };
   if (q) {
     const re = new RegExp(v.escapeRegex(q), 'i');
     filter.$or = [{ name: re }, { email: re }];
   }
-  const patients = await User.find(filter).select('name email').sort({ name: 1 }).lean();
+  const patientQuery = User.find(filter).select('name email').sort({ name: 1 });
+  if (paging.enabled) patientQuery.skip(paging.skip).limit(paging.limit);
+  const patients = await patientQuery.lean();
   const byPatient = new Map(grants.map((g) => [String(g.patient), g]));
-  ok(res, patients.map((p) => ({ ...p, authorizationId: byPatient.get(String(p._id))._id, permissions: byPatient.get(String(p._id)).permissions })));
+  const items = patients.map((p) => ({ ...p, authorizationId: byPatient.get(String(p._id))._id, permissions: byPatient.get(String(p._id)).permissions }));
+  if (!paging.enabled) return ok(res, items);
+  const total = await User.countDocuments(filter);
+  ok(res, { items, pagination: pageInfo(total, paging) });
 };

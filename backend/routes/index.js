@@ -22,11 +22,15 @@ r.post('/auth/register', authLimiter, auth.register);
 r.post('/auth/login', authLimiter, auth.login);
 r.post('/auth/logout', auth.logout);
 r.get('/auth/me', requireAuth, auth.me);
+r.post('/auth/forgot-password', authLimiter, auth.forgotPassword);
+r.post('/auth/reset-password', authLimiter, auth.resetPassword);
 
 r.use(requireAuth);
 
+r.put('/auth/notification-preferences', auth.updateNotificationPreferences);
 r.get('/patients/me', patientOnly, patient.getMine);
 r.put('/patients/me', patientOnly, patient.updateMine);
+r.get('/patients/me/audit-log', patientOnly, rx.history);
 r.post('/patients/me/allergies', patientOnly, patient.addAllergy);
 r.delete('/patients/me/allergies/:id', patientOnly, patient.removeAllergy);
 r.post('/patients/me/history', patientOnly, patient.addHistory);

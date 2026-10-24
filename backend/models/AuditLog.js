@@ -13,4 +13,6 @@ const auditLogSchema = new Schema(
   { timestamps: true },
 );
 
+auditLogSchema.index({ patient: 1, createdAt: -1 });
+
 module.exports = model('AuditLog', auditLogSchema);

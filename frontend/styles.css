@@ -169,6 +169,7 @@ main { width: 100%; max-width: none; min-height: calc(100vh - 105px); padding: 0
 .nav-button:hover { color: white; background: #ffffff12; }
 .nav-button.active { color: white; background: #ffffff1a; box-shadow: inset 3px 0 #31c7ae; }
 .nav-icon { display: inline-grid; flex: 0 0 22px; place-items: center; width: 22px; height: 22px; border-radius: 7px; color: #93d9cd; background: #ffffff12; font-size: 10px; font-weight: 800; }
+.nav-icon svg, .metric-icon svg, .notif-icon svg, .dose-pill-icon svg { width: 17px; height: 17px; }
 .sidebar-note { margin-top: auto; padding: 14px; border: 1px solid #ffffff16; border-radius: 11px; background: #ffffff09; }
 .sidebar-note-icon { display: grid; place-items: center; width: 26px; height: 26px; margin-bottom: 10px; border-radius: 8px; color: #b8fff0; background: #0eaa8b4d; font-size: 19px; font-weight: 700; }
 .sidebar-note strong { color: white; font-size: 12px; }
@@ -209,19 +210,25 @@ main { width: 100%; max-width: none; min-height: calc(100vh - 105px); padding: 0
 .score-ring::before { grid-area: 1 / 1; width: 72px; height: 72px; border-radius: 50%; background: white; content: ""; }
 .score-ring span { z-index: 1; grid-area: 1 / 1; font-size: 18px; font-weight: 750; letter-spacing: -.04em; }
 .score-ring-svg { position: absolute; inset: 0; transform: rotate(-90deg); }
-.score-track, .score-progress { fill: none; stroke-width: 7; }
+.score-track, .score-progress, .score-segment { fill: none; stroke-width: 7; }
 .score-track { stroke: #e9eff1; }
 .score-progress { stroke: #16aa95; stroke-linecap: round; }
+.score-segment { stroke-linecap: butt; }
+.score-segment.taken { stroke: #16aa95; }
+.score-segment.skipped { stroke: #f3c46a; }
+.score-segment.missed { stroke: #e36f76; }
 .score-legend { display: grid; gap: 8px; color: #697889; font-size: 11px; }
 .legend-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: #16aa95; }
 .legend-dot.skipped { background: #f3c46a; }
 .legend-dot.missed { background: #e5a1a3; }
 .dose-card-list { display: grid; gap: 9px; }
-.dose-card { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px; border: 1px solid #e8edf0; border-radius: 10px; background: #fff; }
+.dose-card { display: grid; grid-template-columns: 38px 64px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px; border: 1px solid #e8edf0; border-radius: 10px; background: #fff; }
 .dose-time { color: #344860; font-size: 12px; font-weight: 750; }
 .dose-name { color: #27384d; font-size: 12px; font-weight: 700; }
 .dose-instructions { margin-top: 4px; color: #8491a0; font-size: 10px; }
-.dose-actions { display: flex; gap: 5px; }
+.dose-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+.dose-action-hint { display: block; max-width: 220px; margin-top: 5px; color: #8491a0; font-size: 10px; text-align: right; }
+.dose-actions .button:disabled { cursor: not-allowed; opacity: .55; }
 .button { min-height: 36px; padding: 8px 12px; border-radius: 8px; font-size: 11px; transition: background .15s ease, transform .15s ease; }
 .button:hover { transform: translateY(-1px); }
 .button.primary { background: #119b88; }
@@ -290,6 +297,46 @@ footer { padding: 14px; font-size: 10px; }
 .dose-card-status .dose-actions { justify-content: flex-end; }
 .score-ring { background: #e9eff1; }
 .day-chip { cursor: pointer; }
+.mobile-nav-toggle { display: none; }
+.sidebar-backdrop { display: none; }
+.rx-card-list, .safety-result-list { display: grid; gap: 10px; }
+.rx-card-list { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.rx-card { display: flex; flex-direction: column; gap: 9px; padding: 14px; border: 1px solid #e7ecf0; border-radius: 10px; background: #fff; }
+.rx-card-head, .safety-result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.rx-card-name { color: #1c2838; font-size: 14px; font-weight: 720; }
+.rx-card-sub, .rx-card-body { color: #718094; font-size: 11px; line-height: 1.55; }
+.rx-card-footer { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid #f0f4f7; }
+.interaction-badge, .severity-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 20px; font-size: 9px; font-weight: 800; }
+.interaction-badge.warn, .severity-moderate { color: #965800; background: #fff4e0; }
+.interaction-badge.ok { color: #1e7e34; background: #e8f5e9; }
+.interaction-badge.unknown, .severity-unrated, .severity-information { color: #526173; background: #eef2f4; }
+.severity-major { color: #b42318; background: #fdecea; }
+.safety-result-card { padding: 14px; border: 1px solid #e7ecf0; border-radius: 10px; background: white; }
+.safety-result-card > .muted { font-size: 10px; line-height: 1.5; }
+.safety-result-head h3 { margin: 5px 0; font-size: 14px; }
+.finding-list { display: grid; gap: 8px; margin: 12px 0; }
+.finding-card { padding: 11px 12px; border: 1px solid #e5ebf0; border-left: 3px solid #9aa8b7; border-radius: 8px; background: #fff; }
+.finding-major { border-left-color: #d04444; background: #fffafa; }
+.finding-moderate { border-left-color: #d28a24; background: #fffdf8; }
+.finding-card h4 { margin: 8px 0 4px; font-size: 12px; }
+.finding-card p, .finding-card small { color: #637285; font-size: 10px; line-height: 1.5; }
+.finding-card blockquote { margin: 8px 0; padding: 8px 10px; border-left: 2px solid #c8d4dc; color: #637285; background: #f7f9fa; font-size: 10px; }
+.notif-item { display: flex; gap: 12px; padding: 13px; border: 1px solid #e7ecf0; border-radius: 10px; background: white; }
+.notif-item.unread { border-color: #c2e8df; background: #f4fbf9; }
+.notif-icon { display: grid; flex: 0 0 34px; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: #0b9a88; background: #e8f6f3; }
+.notif-body { flex: 1; min-width: 0; }
+.notif-title { font-size: 12px; font-weight: 700; }
+.notif-msg { margin: 4px 0; color: #718094; font-size: 11px; }
+.notif-meta { margin: 4px 0 8px; color: #8995a3; font-size: 10px; }
+.dose-pill-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: #0b9a88; background: #e8f6f3; }
+.wizard-steps { display: flex; margin: 0 0 16px; }
+.wizard-step { flex: 1; padding: 8px 4px; border-bottom: 2px solid #e0e7ed; color: #92a0af; text-align: center; font-size: 10px; font-weight: 700; }
+.wizard-step.active, .wizard-step.done { border-bottom-color: #0b9a88; color: #0b8376; }
+.wizard-navigation { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.wizard-position { color: #788696; font-size: 10px; }
+.wizard-steps, .wizard-panel, .wizard-navigation { grid-column: 1 / -1; }
+.notification-preferences .checkbox-label { display: flex; align-items: center; gap: 9px; }
+.notification-preferences .checkbox-label input { width: 16px; min-height: 16px; margin: 0; accent-color: #0b9a88; }
 .day-chip:focus-visible, .nav-button:focus-visible, .button:focus-visible { outline: 3px solid #168dcb55; outline-offset: 2px; }
 @media (max-width: 980px) {
   .app-shell { grid-template-columns: 190px minmax(0, 1fr); }
@@ -301,13 +348,17 @@ footer { padding: 14px; font-size: 10px; }
   .site-header { height: 54px; padding: 0 15px; }
   .header-note { display: none; }
   main { min-height: calc(100vh - 93px); }
-  .app-shell { display: block; min-height: calc(100vh - 54px); padding-bottom: 65px; }
-  .app-sidebar { position: fixed; z-index: 20; right: 0; bottom: 0; left: 0; top: auto; display: block; height: 61px; min-height: 0; padding: 6px 5px env(safe-area-inset-bottom); border-top: 1px solid #ffffff12; }
-  .sidebar-label, .sidebar-note, .sidebar-safety { display: none; }
-  .main-nav { display: flex; justify-content: flex-start; gap: 4px; overflow-x: auto; height: 49px; }
-  .nav-button { display: grid; flex: 0 0 67px; justify-items: center; align-content: center; gap: 2px; min-height: 44px; padding: 3px 4px; border-radius: 7px; text-align: center; font-size: 8px; white-space: nowrap; }
-  .nav-button.active { box-shadow: inset 0 2px #31c7ae; }
-  .nav-icon { flex-basis: 18px; width: 18px; height: 18px; border-radius: 6px; font-size: 8px; }
+  .app-shell { display: block; min-height: calc(100vh - 54px); }
+  .app-sidebar { position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; display: flex; width: min(280px, 82vw); height: 100dvh; min-height: 0; padding: 22px 13px; transform: translateX(-105%); transition: transform .2s ease; box-shadow: 12px 0 30px #172a4624; }
+  .sidebar-open .app-sidebar { transform: translateX(0); }
+  .sidebar-open .sidebar-backdrop { position: fixed; z-index: 30; inset: 0; display: block; width: 100%; height: 100%; border: 0; background: #172a4666; }
+  .sidebar-label { display: block; }
+  .sidebar-note, .sidebar-safety { display: block; }
+  .main-nav { display: grid; gap: 4px; overflow-y: auto; overflow-x: hidden; height: auto; }
+  .nav-button { display: flex; flex: auto; justify-items: initial; align-content: initial; gap: 11px; min-height: 42px; padding: 9px 12px; text-align: left; font-size: 12px; white-space: normal; }
+  .nav-button.active { box-shadow: inset 3px 0 #31c7ae; }
+  .nav-icon { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 7px; }
+  .mobile-nav-toggle { display: grid; }
   .app-main { padding: 0 14px 25px; }
   .app-toolbar { min-height: 52px; }
   .toolbar-actions { gap: 8px; }
@@ -320,7 +371,7 @@ footer { padding: 14px; font-size: 10px; }
   .overview-side { grid-template-columns: 1fr; }
   .facility-layout { grid-template-columns: 1fr; }
   .facility-map { height: 270px; }
-  .dose-card { grid-template-columns: 56px minmax(0,1fr); }
+  .dose-card { grid-template-columns: 34px 48px minmax(0,1fr); }
   .dose-card-status { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
   .dose-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .dose-actions .button { flex: 1; }
@@ -338,3 +389,79 @@ footer { padding: 14px; font-size: 10px; }
   .editor-details { width: 76vw; }
   .catalog-results .search-result { align-items: flex-start; flex-direction: column; }
 }
+
+/* Notification badge */
+.icon-button { position: relative; }
+.notif-badge { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: #e5535d; color: white; font-size: 9px; font-weight: 800; display: grid; place-items: center; pointer-events: none; }
+
+/* Forgot password link */
+.auth-link { display: block; margin-top: 8px; text-align: center; color: var(--teal-dark); font-size: 11px; cursor: pointer; background: none; border: none; text-decoration: underline; }
+
+/* Safety severity badges */
+.severity-major { color: #c0392b; background: #fdecea; border: 1px solid #f5c6cb; }
+.severity-moderate { color: #9c5a00; background: #fff4e0; border: 1px solid #ffe0a3; }
+.severity-minor { color: #7a6800; background: #fffde7; border: 1px solid #fff176; }
+.severity-none { color: #1e7e34; background: #e8f5e9; border: 1px solid #a5d6a7; }
+.severity-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 20px; font-size: 10px; font-weight: 800; letter-spacing: .02em; }
+.severity-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* Permission toggles */
+.toggle-wrap { display: flex; align-items: center; gap: 8px; }
+.toggle { position: relative; width: 36px; height: 20px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; inset: 0; border-radius: 20px; background: #cdd6de; cursor: pointer; transition: background .2s; }
+.toggle-slider::before { position: absolute; content: ""; width: 14px; height: 14px; left: 3px; top: 3px; border-radius: 50%; background: white; transition: transform .2s; }
+.toggle input:checked + .toggle-slider { background: #0b9a88; }
+.toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+
+/* Dose card improvements */
+.dose-pill-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: #e8f6f3; color: #0b9a88; font-size: 18px; flex-shrink: 0; }
+
+/* Card-based prescription layout */
+.rx-card { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid #e7ecf0; border-radius: 10px; background: #fff; transition: box-shadow .15s; }
+.rx-card:hover { box-shadow: 0 4px 14px #1b365018; }
+.rx-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.rx-card-name { font-size: 14px; font-weight: 720; color: #1c2838; }
+.rx-card-sub { font-size: 11px; color: #788696; margin-top: 2px; }
+.rx-card-body { font-size: 11px; color: #536277; line-height: 1.55; }
+.rx-card-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid #f0f4f7; }
+.interaction-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 9px; font-weight: 800; }
+.interaction-badge.warn { color: #9c5a00; background: #fff4e0; }
+.interaction-badge.ok { color: #1e7e34; background: #e8f5e9; }
+.interaction-badge.unknown { color: #526173; background: #eef2f4; }
+
+/* Notification feed */
+.notif-item { display: flex; gap: 12px; padding: 13px; border: 1px solid #e7ecf0; border-radius: 10px; background: #fff; }
+.notif-item.unread { background: #f4fbf9; border-color: #c2e8df; }
+.notif-icon { display: grid; flex: 0 0 34px; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: #e8f6f3; color: #0b9a88; font-size: 14px; }
+.notif-body { flex: 1; min-width: 0; }
+.notif-title { font-size: 12px; font-weight: 700; color: #1c2838; }
+.notif-msg { font-size: 11px; color: #788696; margin-top: 2px; }
+.notif-meta { font-size: 10px; color: #a0acb8; margin-top: 4px; }
+
+/* Care team toggle layout */
+.care-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.care-avatar { display: grid; flex: 0 0 36px; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #e8f6f3; color: #0b9a88; font-size: 13px; font-weight: 800; }
+
+/* Stat card icon strip */
+.stat-card-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; font-size: 16px; }
+.stat-card-icon.rx { background: #e8f0fe; color: #1967d2; }
+.stat-card-icon.clock { background: #fce8e6; color: #c5221f; }
+.stat-card-icon.check { background: #e6f4ea; color: #188038; }
+.stat-card-icon.alert { background: #fef7e0; color: #e37400; }
+
+/* Section search bar */
+.search-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #e0e7ed; border-radius: 9px; background: #f8fafb; }
+.search-bar input { border: 0; background: transparent; flex: 1; font-size: 12px; outline: none; }
+
+/* Wizard steps */
+.wizard-steps { display: flex; gap: 0; margin-bottom: 20px; }
+.wizard-step { flex: 1; padding: 8px; text-align: center; font-size: 10px; font-weight: 700; color: #9aabbb; border-bottom: 2px solid #e0e7ed; }
+.wizard-step.active { color: #0b9a88; border-bottom-color: #0b9a88; }
+.wizard-step.done { color: #0b9a88; border-bottom-color: #c2e8df; }
+
+/* Loading skeleton */
+@keyframes skeleton-shimmer { from { background-position: -400px 0; } to { background-position: 400px 0; } }
+.skeleton { border-radius: 6px; background: linear-gradient(90deg, #e8edf0 25%, #f4f7f8 50%, #e8edf0 75%); background-size: 800px 100%; animation: skeleton-shimmer 1.5s infinite; }
+.skeleton-text { height: 12px; margin: 6px 0; }
+.skeleton-title { height: 20px; width: 60%; margin-bottom: 10px; }

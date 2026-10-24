@@ -7,6 +7,7 @@ const rxnorm = require('../services/rxnorm');
 const doses = require('../services/doses');
 const { runSafetyCheck } = require('../services/safety');
 const { inValues } = require('../utils/mongo');
+const { pagination, pageInfo } = require('../utils/pagination');
 
 const EDITABLE = ['medicineName', 'activeIngredients', 'strength', 'dosageInstructions', 'route', 'frequency', 'scheduleTimes', 'startDate', 'endDate', 'additionalInstructions'];
 const SCHEDULE_FIELDS = ['scheduleTimes', 'startDate', 'endDate'];
@@ -71,6 +72,17 @@ exports.list = async (req, res) => {
   await doses.syncPatient(patientId);
   const filter = { patient: patientId };
   if (req.query.status) filter.status = v.oneOf(req.query.status, 'status', ['active', 'discontinued', 'completed']);
+
+  const paging = pagination(req.query);
+  if (paging.enabled) {
+    const [list, total] = await Promise.all([
+      Prescription.find(filter).sort({ status: 1, createdAt: -1 }).skip(paging.skip).limit(paging.limit).populate('lastSafetyCheck', 'interactionStatus findings createdAt').lean(),
+      Prescription.countDocuments(filter),
+    ]);
+    const items = await withPrescriber(list);
+    return ok(res, { items, pagination: pageInfo(total, paging) });
+  }
+
   const list = await Prescription.find(filter).sort({ status: 1, createdAt: -1 }).populate('lastSafetyCheck', 'interactionStatus findings createdAt').lean();
   ok(res, await withPrescriber(list));
 };
@@ -176,23 +188,38 @@ exports.recheck = async (req, res) => {
 };
 
 exports.history = async (req, res) => {
+  if (req.user.role === 'caregiver') throw new HttpError(403, 'Audit history is available to the patient and authorized doctors');
   const patientId = req.user.role === 'patient' ? String(req.user._id) : v.objectId(req.query.patientId, 'patientId');
   await assertPatientAccess(req.user, patientId, 'viewMedications');
-  const filter = { patient: patientId, entityType: 'Prescription' };
+  const filter = { patient: patientId };
   if (req.query.prescriptionId) filter.entityId = v.objectId(req.query.prescriptionId, 'prescriptionId');
-  const logs = await AuditLog.find(filter).sort({ createdAt: -1 }).limit(200).populate('actor', 'name role').lean();
+  const paging = pagination(req.query, { defaultLimit: 50 });
+  const findLogs = AuditLog.find(filter).sort({ createdAt: -1 });
+  if (paging.enabled) findLogs.skip(paging.skip).limit(paging.limit);
+  else findLogs.limit(200);
+  const [logs, total] = await Promise.all([
+    findLogs.populate('actor', 'name role').lean(),
+    paging.enabled ? AuditLog.countDocuments(filter) : Promise.resolve(null),
+  ]);
   const rxIds = [...new Set(logs.map((l) => String(l.entityId)))];
   const rxs = await Prescription.find({ _id: inValues(rxIds) }).select('medicineName').lean();
   const names = new Map(rxs.map((r) => [String(r._id), r.medicineName]));
-  ok(res, logs.map((l) => ({ ...l, medicineName: names.get(String(l.entityId)) || '' })));
+  const items = logs.map((l) => ({ ...l, medicineName: names.get(String(l.entityId)) || '' }));
+  ok(res, paging.enabled ? { items, pagination: pageInfo(total, paging) } : items);
 };
 
 exports.safetyChecks = async (req, res) => {
   const patientId = req.user.role === 'patient' ? String(req.user._id) : v.objectId(req.query.patientId, 'patientId');
   const access = await assertPatientAccess(req.user, patientId, 'viewMedications');
   if (access.level === 'caregiver') throw new HttpError(403, 'Safety check results are available to the patient and their doctors');
-  const checks = await DrugSafetyCheck.find({ patient: patientId }).sort({ createdAt: -1 }).limit(50).populate('requestedBy', 'name').lean();
-  ok(res, checks);
+  const filter = { patient: patientId };
+  const paging = pagination(req.query);
+  const findChecks = DrugSafetyCheck.find(filter).sort({ createdAt: -1 }).populate('requestedBy', 'name');
+  if (paging.enabled) findChecks.skip(paging.skip).limit(paging.limit);
+  else findChecks.limit(50);
+  if (!paging.enabled) return ok(res, await findChecks.lean());
+  const [items, total] = await Promise.all([findChecks.lean(), DrugSafetyCheck.countDocuments(filter)]);
+  ok(res, { items, pagination: pageInfo(total, paging) });
 };
 
 exports.runCheck = async (req, res) => {

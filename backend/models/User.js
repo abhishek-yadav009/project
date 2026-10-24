@@ -8,6 +8,14 @@ const userSchema = new Schema(
     role: { type: String, enum: ['patient', 'doctor', 'caregiver', 'admin'], required: true, index: true },
     failedLogins: { type: Number, default: 0, select: false },
     lockUntil: { type: Date, select: false },
+    resetTokenHash: { type: String, select: false },
+    resetTokenExpiry: { type: Date, select: false },
+    resetTokenAttempts: { type: Number, default: 0, select: false },
+    notificationPhone: { type: String, trim: true, maxlength: 20, default: '' },
+    notificationPreferences: {
+      email: { type: Boolean, default: false },
+      sms: { type: Boolean, default: false },
+    },
   },
   {
     timestamps: true,
@@ -16,6 +24,12 @@ const userSchema = new Schema(
         delete ret.passwordHash;
         delete ret.failedLogins;
         delete ret.lockUntil;
+        delete ret.resetToken;
+        delete ret.resetTokenHash;
+        delete ret.resetTokenExpiry;
+        delete ret.resetTokenAttempts;
+        delete ret.notificationPhone;
+        delete ret.notificationPreferences;
         delete ret.__v;
         return ret;
       },

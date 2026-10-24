@@ -22,10 +22,11 @@ function buildApp() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
-          styleSrc: ["'self'"],
-          imgSrc: ["'self'", 'data:'],
-          connectSrc: ["'self'"],
+          scriptSrc: ["'self'", 'https://unpkg.com'],
+          styleSrc: ["'self'", 'https://unpkg.com'],
+          imgSrc: ["'self'", 'data:', 'https://unpkg.com', 'https://*.tile.openstreetmap.org'],
+          styleSrcAttr: ["'unsafe-inline'"],
+          connectSrc: ["'self'", 'https://*.tile.openstreetmap.org'],
           frameSrc: ["'self'", 'https://www.openstreetmap.org'],
           frameAncestors: ["'self'", 'https://*.vusercontent.net', 'https://v0.app', 'https://*.v0.app'],
         },

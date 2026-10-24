@@ -7,6 +7,7 @@ const time = require('../backend/utils/time');
 const { CareAuthorization, DoseRecord } = require('../backend/models');
 const { inValues, trustedOperators } = require('../backend/utils/mongo');
 const { enforceTrustedOrigin } = require('../backend/middleware/origin');
+const { pagination, pageInfo } = require('../backend/utils/pagination');
 
 test('date validation accepts real ISO calendar dates only', () => {
   assert.equal(validate.dateStr('2024-02-29', 'Date'), '2024-02-29');
@@ -55,6 +56,15 @@ test('state-changing requests reject untrusted browser origins', () => {
     method: 'POST',
     protocol: requestOrigin.split('://')[0],
     get: (name) => name === 'origin' ? origin : requestOrigin.split('://')[1],
+  });
+
+  test('list pagination validates bounds and returns stable metadata', () => {
+    const paging = pagination({ page: '2', limit: '10' });
+    assert.deepEqual(paging, { enabled: true, page: 2, limit: 10, skip: 10 });
+    assert.deepEqual(pageInfo(21, paging), { page: 2, limit: 10, total: 21, pages: 3 });
+    assert.equal(pagination({}).enabled, false);
+    assert.throws(() => pagination({ page: '0' }), /between 1 and/);
+    assert.throws(() => pagination({ limit: '1.5' }), /positive integer/);
   });
   let nextCalls = 0;
   enforceTrustedOrigin(request('http://localhost:3000'), {}, () => { nextCalls += 1; });

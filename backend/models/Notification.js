@@ -12,8 +12,8 @@ const notificationSchema = new Schema(
     readAt: { type: Date, default: null },
     channels: {
       inApp: { type: String, default: 'delivered' },
-      email: { type: String, default: 'not_configured' },
-      sms: { type: String, default: 'not_configured' },
+      email: { type: String, default: 'opted_out' },
+      sms: { type: String, default: 'opted_out' },
     },
   },
   { timestamps: true },

@@ -3,6 +3,7 @@ const { HttpError, ok } = require('../utils/http');
 const v = require('../utils/validate');
 const facilities = require('../services/facilities');
 const { audit, notify } = require('../services/audit');
+const { pagination, pageInfo } = require('../utils/pagination');
 
 exports.facilities = async (req, res) => {
   const type = req.query.type || 'both';
@@ -45,8 +46,13 @@ exports.facilities = async (req, res) => {
 exports.listDoctors = async (req, res) => {
   const filter = {};
   if (req.query.status) filter.verificationStatus = v.oneOf(req.query.status, 'status', ['pending', 'verified', 'rejected']);
-  const docs = await DoctorProfile.find(filter).populate('user', 'name email').sort({ createdAt: -1 }).lean();
-  ok(res, docs);
+  const paging = pagination(req.query);
+  const query = DoctorProfile.find(filter).populate('user', 'name email').sort({ createdAt: -1 });
+  if (paging.enabled) query.skip(paging.skip).limit(paging.limit);
+  const docs = await query.lean();
+  if (!paging.enabled) return ok(res, docs);
+  const total = await DoctorProfile.countDocuments(filter);
+  ok(res, { items: docs, pagination: pageInfo(total, paging) });
 };
 
 exports.verifyDoctor = async (req, res) => {

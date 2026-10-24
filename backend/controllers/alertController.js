@@ -5,6 +5,7 @@ const config = require('../config');
 const { assertPatientAccess } = require('../services/access');
 const { audit } = require('../services/audit');
 const { inValues } = require('../utils/mongo');
+const { pagination, pageInfo } = require('../utils/pagination');
 
 async function visibleAlerts(user, alert) {
   const access = await assertPatientAccess(user, alert.patient, 'receiveAlerts');
@@ -40,10 +41,15 @@ exports.list = async (req, res) => {
   }
   const filter = { patient: inValues(patientIds) };
   if (req.query.status) filter.status = v.oneOf(req.query.status, 'status', ['open', 'resolved']);
-  const alerts = await Alert.find(filter).sort({ status: 1, createdAt: -1 }).limit(100)
-    .populate('patient', 'name').populate('prescription', 'medicineName strength').populate('resolvedBy', 'name')
-    .populate({ path: 'doses', select: 'scheduledAt localDate localTime status autoMarked note' })
-    .lean();
+  const paging = pagination(req.query);
+  const alertQuery = Alert.find(filter).sort({ status: 1, createdAt: -1 });
+  if (paging.enabled) alertQuery.skip(paging.skip).limit(paging.limit);
+  else alertQuery.limit(100);
+  const [alerts, total] = await Promise.all([
+    alertQuery.populate('patient', 'name').populate('prescription', 'medicineName strength').populate('resolvedBy', 'name')
+      .populate({ path: 'doses', select: 'scheduledAt localDate localTime status autoMarked note' }).lean(),
+    paging.enabled ? Alert.countDocuments(filter) : Promise.resolve(null),
+  ]);
 
   const out = [];
   for (const a of alerts) {
@@ -52,7 +58,12 @@ exports.list = async (req, res) => {
   }
   const ids = alerts.filter((a) => !a.viewedBy?.some((x) => String(x.user) === String(req.user._id))).map((a) => a._id);
   if (ids.length) await Alert.updateMany({ _id: inValues(ids) }, { $push: { viewedBy: { user: req.user._id, at: new Date() } } });
-  ok(res, { threshold: config.missedDoseThreshold, windowDays: config.missedDoseWindowDays, alerts: out });
+  ok(res, {
+    threshold: config.missedDoseThreshold,
+    windowDays: config.missedDoseWindowDays,
+    alerts: out,
+    ...(paging.enabled ? { pagination: pageInfo(total, paging) } : {}),
+  });
 };
 
 exports.resolve = async (req, res) => {
@@ -73,17 +84,21 @@ exports.resolve = async (req, res) => {
 exports.notifications = async (req, res) => {
   const filter = { recipient: req.user._id };
   if (req.query.unread === 'true') filter.readAt = null;
+  const paging = pagination(req.query, { defaultLimit: 25 });
   const [items, unread] = await Promise.all([
-    Notification.find(filter).sort({ createdAt: -1 }).limit(50).populate('patient', 'name').lean(),
+    Notification.find(filter).sort({ createdAt: -1 }).skip(paging.enabled ? paging.skip : 0)
+      .limit(paging.enabled ? paging.limit : 50).populate('patient', 'name').lean(),
     Notification.countDocuments({ recipient: req.user._id, readAt: null }),
   ]);
+  const total = paging.enabled ? await Notification.countDocuments(filter) : null;
   ok(res, {
     unread,
     items,
+    ...(paging.enabled ? { pagination: pageInfo(total, paging) } : {}),
     channels: {
       inApp: 'enabled',
-      email: config.emailConfigPresent ? 'configured, but delivery is not implemented' : 'not configured; delivery is not implemented',
-      sms: config.smsConfigPresent ? 'configured, but delivery is not implemented' : 'not configured; delivery is not implemented',
+      email: config.emailConfigPresent ? 'configured; user opt-in required' : 'not configured',
+      sms: config.smsConfigPresent ? 'configured; user opt-in required' : 'not configured',
     },
   });
 };

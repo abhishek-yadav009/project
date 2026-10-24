@@ -30,6 +30,11 @@ module.exports = {
   doseHistoryDays: num(env.DOSE_HISTORY_DAYS, 14),
   userAgent: env.HTTP_USER_AGENT || 'healthcare-mvp-hackathon/1.0 (demo app)',
   openFdaApiKey: env.OPENFDA_API_KEY || '',
-  emailConfigPresent: Boolean(env.SMTP_URL),
-  smsConfigPresent: Boolean(env.SMS_PROVIDER_KEY),
+  smtpUrl: env.SMTP_URL || '',
+  smtpFrom: env.SMTP_FROM || '',
+  twilioAccountSid: env.TWILIO_ACCOUNT_SID || '',
+  twilioAuthToken: env.TWILIO_AUTH_TOKEN || '',
+  twilioFromNumber: env.TWILIO_FROM_NUMBER || '',
+  emailConfigPresent: Boolean(env.SMTP_URL && env.SMTP_FROM),
+  smsConfigPresent: Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM_NUMBER),
 };

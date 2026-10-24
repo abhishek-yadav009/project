@@ -12,22 +12,39 @@ let medicineSearchTimer;
 let medicineSearchCache = new Map();
 let browserReminderTimer;
 let doctorFilter = 'pending';
+let facilityMap = null;
+const listPages = new Map();
 const notifiedDoseIds = new Set();
+const NAV_ICONS = {
+  overview: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-6h-4v6H4a1 1 0 0 1-1-1z"/>',
+  profile: '<circle cx="12" cy="8" r="3"/><path d="M5 20a7 7 0 0 1 14 0"/>',
+  patients: '<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M20 8v6m3-3h-6"/>',
+  prescriptions: '<path d="M8 3h8l4 4v14H4V3z"/><path d="M8 12h8m-8 4h8m-8-8h3"/>',
+  doses: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  safety: '<path d="M12 3 3.5 7v5c0 5 3.5 8 8.5 9 5-1 8.5-4 8.5-9V7z"/><path d="m9 12 2 2 4-4"/>',
+  'medicine-search': '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5M8 10h5"/>',
+  care: '<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M19 8v6m3-3h-6"/>',
+  alerts: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M10 20h4"/>',
+  history: '<path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5m4-1v5l3 2"/>',
+  facilities: '<path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>',
+  notifications: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M10 21h4"/>',
+  admin: '<path d="M12 3 4 6v5c0 5 3 8 8 10 5-2 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/>',
+};
 
 const NAV_ITEMS = {
-  overview: ['Overview', 'O'],
-  profile: ['My profile', 'P'],
-  patients: ['Patients', 'PT'],
-  prescriptions: ['Prescriptions', 'Rx'],
-  doses: ['Dose schedule', 'D'],
-  safety: ['Safety checks', '!'],
-  'medicine-search': ['Medicine guide', 'M'],
-  care: ['Care team', 'C'],
-  alerts: ['Alerts', 'A'],
-  history: ['Change history', 'H'],
-  facilities: ['Find care', 'F'],
-  notifications: ['Notifications', 'N'],
-  admin: ['Doctor review', '✓'],
+  overview: 'Overview',
+  profile: 'My profile',
+  patients: 'Patients',
+  prescriptions: 'Prescriptions',
+  doses: 'Dose schedule',
+  safety: 'Safety checks',
+  'medicine-search': 'Medicine guide',
+  care: 'Care team',
+  alerts: 'Alerts',
+  history: 'Change history',
+  facilities: 'Find care',
+  notifications: 'Notifications',
+  admin: 'Doctor review',
 };
 
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({
@@ -61,8 +78,9 @@ async function api(path, options = {}) {
 
 function setAuthTab(tab) {
   document.querySelectorAll('[data-auth-tab]').forEach((button) => button.classList.toggle('active', button.dataset.authTab === tab));
-  document.querySelector('#login-form').classList.toggle('hidden', tab !== 'login');
-  document.querySelector('#register-form').classList.toggle('hidden', tab !== 'register');
+  for (const name of ['login', 'register', 'forgot', 'reset']) {
+    document.querySelector(`#${name}-form`).classList.toggle('hidden', tab !== name);
+  }
   showMessage('');
 }
 
@@ -70,7 +88,7 @@ function sectionsForRole(role) {
   if (role === 'patient') return [
     ['overview', 'Overview'], ['profile', 'My profile'], ['prescriptions', 'Prescriptions'],
     ['doses', 'Dose schedule'], ['safety', 'Safety checks'], ['medicine-search', 'Medicine guide'], ['care', 'Care team'],
-    ['alerts', 'Alerts'], ['facilities', 'Find care'], ['notifications', 'Notifications'],
+    ['alerts', 'Alerts'], ['history', 'Change history'], ['facilities', 'Find care'], ['notifications', 'Notifications'],
   ];
   if (role === 'doctor') return [
     ['overview', 'Overview'], ['patients', 'Patients'], ['prescriptions', 'Prescriptions'],
@@ -97,6 +115,7 @@ async function enterApp(user) {
   document.querySelector('#welcome-subtitle').textContent = `${user.role[0].toUpperCase()}${user.role.slice(1)} account${user.role === 'doctor' && user.doctor?.verificationStatus !== 'verified' ? ' · Verification pending' : ''}`;
   document.querySelector('#account-chip').textContent = user.name;
   document.querySelector('#toolbar-role').textContent = `${user.role[0].toUpperCase()}${user.role.slice(1)} workspace`;
+  updateNotificationBadge(user.unreadNotifications || 0);
   if (user.role !== 'patient' && user.role !== 'admin') {
     try {
       patientOptions = await api('/care/patients');
@@ -111,6 +130,14 @@ async function enterApp(user) {
   await renderSection(activeSection);
 }
 
+function updateNotificationBadge(count) {
+  const badge = document.querySelector('#notif-badge');
+  const unread = Math.max(0, Number(count) || 0);
+  badge.textContent = unread > 99 ? '99+' : String(unread);
+  badge.classList.toggle('hidden', unread === 0);
+  document.querySelector('#notification-link').setAttribute('aria-label', `Open notifications${unread ? `, ${unread} unread` : ''}`);
+}
+
 function renderNav() {
   const section = sectionsForRole(currentUser.role).find(([id]) => id === activeSection);
   if (section) {
@@ -119,8 +146,8 @@ function renderNav() {
     document.querySelector('#welcome-title').textContent = activeSection === 'overview' ? `Welcome, ${currentUser.name}` : label;
   }
   nav.innerHTML = sectionsForRole(currentUser.role).map(([id, label]) => {
-    const icon = NAV_ITEMS[id]?.[1] || '•';
-    return `<button class="nav-button ${id === activeSection ? 'active' : ''}" type="button" data-section="${id}" aria-current="${id === activeSection ? 'page' : 'false'}"><span class="nav-icon" aria-hidden="true">${icon}</span><span>${label}</span></button>`;
+    const icon = NAV_ICONS[id] || '';
+    return `<button class="nav-button ${id === activeSection ? 'active' : ''}" type="button" data-section="${id}" aria-current="${id === activeSection ? 'page' : 'false'}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icon}</svg></span><span>${NAV_ITEMS[id] || label}</span></button>`;
   }).join('');
 }
 
@@ -143,8 +170,42 @@ async function contextData(path) {
   return api(`${path}${query}`);
 }
 
+function pageNumber(key) {
+  return listPages.get(key) || 1;
+}
+
+function paginationControls(key, pagination) {
+  if (!pagination || pagination.pages <= 1) return '';
+  const previous = Math.max(1, pagination.page - 1);
+  const next = Math.min(pagination.pages, pagination.page + 1);
+  return `<nav class="pagination-controls" aria-label="List pages"><button type="button" class="button secondary small" data-action="list-page" data-list="${esc(key)}" data-page="${previous}" ${pagination.page <= 1 ? 'disabled' : ''}>Previous</button><span>Page ${esc(pagination.page)} of ${esc(pagination.pages)} · ${esc(pagination.total)} records</span><button type="button" class="button secondary small" data-action="list-page" data-list="${esc(key)}" data-page="${next}" ${pagination.page >= pagination.pages ? 'disabled' : ''}>Next</button></nav>`;
+}
+
+async function pagedContextData(path, key) {
+  const patientId = await getContextId();
+  if (!patientId) return null;
+  const params = new URLSearchParams({ page: String(pageNumber(key)), limit: '10' });
+  if (currentUser.role !== 'patient') params.set('patientId', patientId);
+  return api(`${path}?${params}`);
+}
+
 function panel(title, body, tools = '') {
   return `<section class="panel"><div class="panel-head"><h2>${title}</h2>${tools}</div>${body}</section>`;
+}
+
+function iconSvg(name) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICONS[name] || ''}</svg>`;
+}
+
+function dosePillIcon() {
+  return '<span class="dose-pill-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1a5 5 0 0 1 0-7.1l7.1-7.1a5 5 0 0 1 7.1 7.1L12 19.1a5 5 0 0 1-7.1 0Z"/><path d="m8.4 8.4 7.1 7.1"/></svg></span>';
+}
+
+function doseStatusActions(dose) {
+  if (!['upcoming', 'missed'].includes(dose.status)) return '';
+  if (currentUser.role !== 'patient') return '<span class="dose-action-hint">Sign in as the patient to record this dose</span>';
+  if (dose.status === 'missed' && !dose.autoMarked) return '';
+  return `<div class="dose-actions" aria-label="Record dose status"><button class="button primary small" type="button" data-action="dose-status" data-id="${esc(dose._id)}" data-status="taken">Mark taken</button><button class="button secondary small" type="button" data-action="dose-status" data-id="${esc(dose._id)}" data-status="skipped">Skip dose</button></div>`;
 }
 
 function table(headers, rows) {
@@ -152,11 +213,19 @@ function table(headers, rows) {
   return `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
 
-function adherenceRing(value) {
+function adherenceRing(value, breakdown = {}) {
   const score = value === null || value === undefined ? null : Math.max(0, Math.min(100, Number(value)));
   const circumference = 226.2;
-  const progress = score === null || !Number.isFinite(score) ? 0 : (circumference * score / 100).toFixed(2);
-  return `<div class="score-ring"><svg class="score-ring-svg" viewBox="0 0 94 94" aria-hidden="true"><circle class="score-track" cx="47" cy="47" r="36"></circle><circle class="score-progress" cx="47" cy="47" r="36" stroke-dasharray="${progress} ${circumference}"></circle></svg><span>${score === null || !Number.isFinite(score) ? '—' : `${score}%`}</span></div>`;
+  const total = Number(breakdown.eligible) || 0;
+  let offset = 0;
+  const segments = total ? ['taken', 'skipped', 'missed'].map((key) => {
+    const amount = Math.max(0, Number(breakdown[key]) || 0);
+    const length = circumference * amount / total;
+    const segment = `<circle class="score-segment ${key}" cx="47" cy="47" r="36" stroke-dasharray="${length.toFixed(2)} ${(circumference - length).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}"></circle>`;
+    offset += length;
+    return segment;
+  }).join('') : `<circle class="score-progress" cx="47" cy="47" r="36" stroke-dasharray="${score === null || !Number.isFinite(score) ? 0 : (circumference * score / 100).toFixed(2)} ${circumference}"></circle>`;
+  return `<div class="score-ring"><svg class="score-ring-svg" viewBox="0 0 94 94" aria-hidden="true"><circle class="score-track" cx="47" cy="47" r="36"></circle>${segments}</svg><span>${score === null || !Number.isFinite(score) ? '—' : `${score}%`}</span></div>`;
 }
 
 function patientSelectorMarkup() {
@@ -182,9 +251,77 @@ async function renderSection(section = activeSection) {
     else if (section === 'medicine-search') content.innerHTML = medicineSearchView();
     else if (section === 'admin') content.innerHTML = await adminView();
     else content.innerHTML = empty('This section is not available.');
+    setupPrescriptionWizard();
+    closeMobileSidebar();
   } catch (error) {
     content.innerHTML = `${patientSelectorMarkup()}${panel('Could not load this section', `<div class="callout warning">${esc(error.message)}</div><button class="button secondary" type="button" data-action="refresh">Try again</button>`)}`;
   }
+}
+
+function setupPrescriptionWizard() {
+  const form = document.querySelector('#prescription-form');
+  if (!form || form.dataset.wizardReady === 'true') return;
+  form.dataset.wizardReady = 'true';
+  const nodes = Array.from(form.children);
+  const submit = nodes.find((node) => node.querySelector?.('[type="submit"]'));
+  const fields = nodes.filter((node) => node.tagName === 'LABEL');
+  const groups = [fields.slice(0, 4), fields.slice(4, 9), fields.slice(9)];
+  const labels = ['Medicine', 'Schedule', 'Instructions'];
+  const indicator = document.createElement('div');
+  indicator.className = 'wizard-steps';
+  indicator.setAttribute('aria-label', 'Prescription form steps');
+  const panels = groups.map((items, index) => {
+    const step = document.createElement('div');
+    step.className = `wizard-panel form-grid${index ? ' hidden' : ''}`;
+    step.dataset.wizardPanel = String(index);
+    items.forEach((item) => step.append(item));
+    if (index === groups.length - 1 && submit) step.append(submit);
+    const mark = document.createElement('span');
+    mark.className = `wizard-step${index === 0 ? ' active' : ''}`;
+    mark.dataset.wizardStep = String(index);
+    mark.textContent = `${index + 1}. ${labels[index]}`;
+    indicator.append(mark);
+    return step;
+  });
+  const navigation = document.createElement('div');
+  navigation.className = 'wizard-navigation';
+  navigation.innerHTML = '<button type="button" class="button secondary" data-action="wizard-prev" disabled>Back</button><span class="wizard-position" aria-live="polite">Step 1 of 3</span><button type="button" class="button primary" data-action="wizard-next">Continue</button>';
+  form.replaceChildren(indicator, ...panels, navigation);
+}
+
+function setPrescriptionWizardStep(stepIndex) {
+  const form = document.querySelector('#prescription-form');
+  if (!form) return;
+  const panels = [...form.querySelectorAll('[data-wizard-panel]')];
+  if (!panels.length) return;
+  const nextIndex = Math.max(0, Math.min(panels.length - 1, stepIndex));
+  const current = panels.find((panel) => !panel.classList.contains('hidden'));
+  const currentIndex = panels.indexOf(current);
+  if (!current || currentIndex < 0) return;
+  if (nextIndex > currentIndex) {
+    const invalidField = [...current.querySelectorAll('input, select, textarea')].find((field) => !field.checkValidity());
+    if (invalidField) {
+      invalidField.reportValidity();
+      invalidField.focus();
+      return;
+    }
+  }
+  panels.forEach((panel, index) => panel.classList.toggle('hidden', index !== nextIndex));
+  form.querySelectorAll('[data-wizard-step]').forEach((step) => {
+    const index = Number(step.dataset.wizardStep);
+    step.classList.toggle('active', index === nextIndex);
+    step.classList.toggle('done', index < nextIndex);
+  });
+  const previous = form.querySelector('[data-action="wizard-prev"]');
+  const next = form.querySelector('[data-action="wizard-next"]');
+  previous.disabled = nextIndex === 0;
+  next.classList.toggle('hidden', nextIndex === panels.length - 1);
+  form.querySelector('.wizard-position').textContent = `Step ${nextIndex + 1} of ${panels.length}`;
+}
+
+function closeMobileSidebar() {
+  appView.classList.remove('sidebar-open');
+  document.querySelector('#mobile-nav-toggle')?.setAttribute('aria-expanded', 'false');
 }
 
 async function overviewView() {
@@ -208,23 +345,23 @@ async function overviewView() {
   const adherencePercent = adherence.adherencePercent;
   const score = adherencePercent === null || adherencePercent === undefined ? null : Math.max(0, Math.min(100, adherencePercent));
   const openAlerts = alerts.filter((a) => a.status === 'open');
-  const todaysDoses = (schedule.todaySchedule || []).slice(0, 5);
+  const todaysDoses = schedule.todaySchedule || [];
   const reminderButton = currentUser.role === 'patient' ? `<button class="button secondary small" type="button" data-action="enable-browser-reminders">${typeof Notification === 'undefined' ? 'Browser reminders unavailable' : Notification.permission === 'granted' ? 'Browser reminders on' : 'Enable browser reminders'}</button>` : '';
   return `${patientSelectorMarkup()}
     ${errors.length ? panel('Some data could not be loaded', `<div class="callout warning">${errors.map(esc).join('<br>')}</div>`) : ''}
     <div class="grid stats-grid">
-      ${panel(`<div class="metric-label"><span class="metric-icon">Rx</span>Active medicines</div>`, `<p class="metric">${activeCount}</p><p class="metric-note">Current prescriptions on record.</p>`)}
-      ${panel(`<div class="metric-label"><span class="metric-icon">◷</span>Upcoming doses</div>`, `<p class="metric">${upcoming.length}</p><p class="metric-note">${nextDose ? `Next · ${esc(nextDose.prescription?.medicineName)} at ${esc(dateText(nextDose.scheduledAt))}` : 'Nothing scheduled in the next two days.'}</p>`)}
-      ${panel(`<div class="metric-label"><span class="metric-icon">✓</span>Adherence</div>`, `<p class="metric">${score === null ? '—' : `${score}%`}</p><p class="metric-note">Based on recorded doses; future doses excluded.</p>`)}
-      ${panel(`<div class="metric-label"><span class="metric-icon">!</span>Open alerts</div>`, `<p class="metric">${openAlerts.length}</p><p class="metric-note">${missed.length} missed in recent history.</p>`)}
+      ${panel(`<div class="metric-label"><span class="metric-icon">${iconSvg('prescriptions')}</span>Active medicines</div>`, `<p class="metric">${activeCount}</p><p class="metric-note">Current prescriptions on record.</p>`)}
+      ${panel(`<div class="metric-label"><span class="metric-icon">${iconSvg('doses')}</span>Upcoming doses</div>`, `<p class="metric">${upcoming.length}</p><p class="metric-note">${nextDose ? `Next · ${esc(nextDose.prescription?.medicineName)} at ${esc(dateText(nextDose.scheduledAt))}` : 'Nothing scheduled in the next seven days.'}</p>`)}
+      ${panel(`<div class="metric-label"><span class="metric-icon">${iconSvg('safety')}</span>Adherence</div>`, `<p class="metric">${score === null ? '—' : `${score}%`}</p><p class="metric-note">Based on recorded doses; pending doses are excluded.</p>`)}
+      ${panel(`<div class="metric-label"><span class="metric-icon">${iconSvg('alerts')}</span>Open alerts</div>`, `<p class="metric">${openAlerts.length}</p><p class="metric-note">${missed.length} missed in recent history.</p>`)}
     </div>
     <div class="overview-grid">
       <div class="overview-main">
-        ${panel('Today’s schedule', `${todaysDoses.length ? `<div class="dose-card-list">${todaysDoses.map((dose) => `<article class="dose-card"><div class="dose-time">${esc(dose.localTime)}</div><div><div class="dose-name">${esc(dose.prescription?.medicineName || 'Medicine')}</div><div class="dose-instructions">${esc(dose.prescription?.dosageInstructions || '')}</div></div><div>${statusTag(dose.status)}${currentUser.role === 'patient' && dose.status === 'upcoming' ? `<div class="dose-actions"><button class="button primary small" type="button" data-action="dose-status" data-id="${esc(dose._id)}" data-status="taken">Taken</button></div>` : ''}</div></article>`).join('')}</div>` : empty('No doses scheduled for today.')}${panelActions('doses', 'View full schedule')}`)}
+        ${panel('Today’s schedule', `${todaysDoses.length ? `<div class="dose-card-list">${todaysDoses.map((dose) => `<article class="dose-card">${dosePillIcon()}<div class="dose-time">${esc(dose.localTime)}</div><div><div class="dose-name">${esc(dose.prescription?.medicineName || 'Medicine')}</div><div class="dose-instructions">${esc(dose.prescription?.dosageInstructions || '')}</div></div><div class="dose-card-status">${statusTag(dose.status)}${doseStatusActions(dose)}</div></article>`).join('')}</div>` : empty('No doses scheduled for today.')}${panelActions('doses', 'View full schedule')}`)}
         ${panel('Medication safety', `<div class="safety-banner"><span class="safety-mark">!</span><span>Automated checks are a limited prototype, not a comprehensive interaction checker. Review sourced findings with a qualified professional; never change medication based only on this tool.</span></div>${panelActions('safety', 'Review safety checks')}`)}
       </div>
       <div class="overview-side">
-        ${panel('Adherence snapshot', `<div class="score-layout">${adherenceRing(score)}<div class="score-legend"><span><i class="legend-dot"></i>${adherence.taken || 0} taken</span><span><i class="legend-dot skipped"></i>${adherence.skipped || 0} skipped</span><span><i class="legend-dot missed"></i>${adherence.missed || 0} missed</span></div></div><p class="metric-note">${score === null ? 'Adherence appears after a scheduled dose is recorded.' : `Of ${adherence.eligible} eligible doses over ${adherence.days} days.`}</p>`)}
+        ${panel('Adherence snapshot', `<div class="score-layout">${adherenceRing(score, adherence)}<div class="score-legend"><span><i class="legend-dot"></i>${adherence.taken || 0} taken</span><span><i class="legend-dot skipped"></i>${adherence.skipped || 0} skipped</span><span><i class="legend-dot missed"></i>${adherence.missed || 0} missed</span></div></div><p class="metric-note">${score === null ? 'Adherence appears after a scheduled dose is recorded.' : `Of ${adherence.eligible} eligible doses over ${adherence.days} days.`}</p>`)}
         ${panel('Care team alerts', openAlerts.length ? `<div class="list">${openAlerts.slice(0, 3).map((alert) => `<article class="list-item"><h3>${esc(alert.prescription?.medicineName || 'Medication alert')}</h3><p>${esc(alert.missedCount)} missed doses in ${esc(alert.windowDays)} days.</p></article>`).join('')}</div>${panelActions('alerts', 'Review alerts')}` : empty('No unresolved alerts.'))}
         ${currentUser.role === 'patient' ? panel('Browser reminders', `<p class="metric-note">Reminders can appear while this page is open and browser notifications are enabled. They do not work when the app is closed.</p>${reminderButton}`) : ''}
       </div>
@@ -312,14 +449,28 @@ async function patientsView() {
 async function prescriptionsView() {
   const patientId = await getContextId();
   if (!patientId) return `${patientSelectorMarkup()}${panel('Prescriptions', empty('Select a patient who has authorized you.'))}`;
-  const list = await contextData('/prescriptions');
-  const rows = list.map((r) => `<tr>
-    <td><strong>${esc(r.medicineName)}</strong><br>${esc(r.strength)} · ${esc(r.route)}</td>
-    <td>${esc(r.dosageInstructions)}<br>${esc(r.frequency)} (${esc((r.scheduleTimes || []).join(', '))})</td>
-    <td>${esc(r.startDate)} – ${esc(r.endDate || 'ongoing')}</td><td>${statusTag(r.status)}</td>
-    <td>${esc(r.prescriberName || '')}${r.lastSafetyCheck ? `<br><small>Safety: ${esc(r.lastSafetyCheck.interactionStatus)}</small>` : ''}</td>
-    <td>${currentUser.role === 'doctor' && r.status === 'active' ? `<div class="action-stack"><button class="button secondary small" type="button" data-action="recheck" data-id="${esc(r._id)}">Recheck safety</button><button class="button danger small" type="button" data-action="discontinue" data-id="${esc(r._id)}" data-name="${esc(r.medicineName)}">Discontinue</button><details class="editor-details"><summary>Edit prescription</summary>${prescriptionEditor(r)}</details></div>` : ''}</td>
-  </tr>`);
+  const result = await pagedContextData('/prescriptions', 'prescriptions');
+  const list = result.items || [];
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const cards = list.map((r) => {
+    const findings = r.lastSafetyCheck?.findings || [];
+    const warningFindings = findings.filter((finding) => finding.type !== 'missing_info');
+    const safetyLabel = r.lastSafetyCheck?.interactionStatus || 'not checked';
+    const safetyClass = warningFindings.length ? 'warn' : ['partial', 'unavailable'].includes(safetyLabel) ? 'unknown' : 'ok';
+    const warningBadges = warningFindings.map((finding) => {
+      const severeAllergy = finding.type === 'allergy_match' && /severe/i.test(finding.severity || '');
+      const moderateAllergy = finding.type === 'allergy_match' && /moderate/i.test(finding.severity || '');
+      const klass = severeAllergy ? 'major' : moderateAllergy ? 'moderate' : 'unrated';
+      const label = severeAllergy ? 'Review · severe allergy' : moderateAllergy ? 'Review · moderate allergy' : 'Review · not rated by source';
+      return `<span class="severity-badge severity-${klass}" title="${esc(finding.title)}">${esc(label)}</span>`;
+    }).join('');
+    return `<article class="rx-card">
+      <div class="rx-card-head"><div><div class="rx-card-name">${esc(r.medicineName)}</div><div class="rx-card-sub">${esc(r.strength)} · ${esc(r.route)} · ${esc(r.prescriberName || 'Prescriber not listed')}</div></div>${statusTag(r.status)}</div>
+      <div class="rx-card-body">${esc(r.dosageInstructions)} · ${esc(r.frequency)} (${esc((r.scheduleTimes || []).join(', '))})<br>${esc(r.startDate)} – ${esc(r.endDate || 'ongoing')}</div>
+      <div class="rx-card-footer"><span class="interaction-badge ${safetyClass}">Safety check: ${esc(safetyLabel)}</span>${warningBadges || (!warningFindings.length && r.lastSafetyCheck ? '<span class="muted">No explicit interaction findings recorded; not a safety guarantee.</span>' : '')}</div>
+      ${currentUser.role === 'doctor' && r.status === 'active' ? `<div class="action-stack"><button class="button secondary small" type="button" data-action="recheck" data-id="${esc(r._id)}">Recheck safety</button><button class="button danger small" type="button" data-action="discontinue" data-id="${esc(r._id)}" data-name="${esc(r.medicineName)}">Discontinue</button><details class="editor-details"><summary>Edit prescription</summary>${prescriptionEditor(r)}</details></div>` : ''}
+    </article>`;
+  }).join('');
   const catalogSearch = `<div class="section-toolbar"><div><strong>RxNorm medicine catalog</strong><p class="metric-note">Search medicines by name from the U.S. National Library of Medicine. No stock information is available here.</p></div></div>
       <form id="medicine-search-form" class="inline-form"><label>Search medicine names<input name="q" minlength="2" maxlength="100" placeholder="Search the RxNorm catalog"></label><button class="button secondary" type="submit">Search catalog</button></form><div id="catalog-results"></div>`;
   const createForm = currentUser.role === 'doctor' ? `<h3>Create prescription</h3>
@@ -330,8 +481,8 @@ async function prescriptionsView() {
       <label>Dosage instructions <input name="dosageInstructions" required maxlength="500" placeholder="As prescribed"></label>
       <label>Route <select name="route">${['oral','sublingual','topical','inhalation','intravenous','intramuscular','subcutaneous','rectal','ophthalmic','otic','nasal','transdermal','other'].map((r) => `<option value="${r}">${r}</option>`).join('')}</select></label>
       <label>Frequency <input name="frequency" required maxlength="100" placeholder="As prescribed"></label>
-      <label>Scheduled times (HH:MM, comma-separated) <input name="scheduleTimes" required placeholder="08:00, 20:00"></label>
-      <label>Start date <input name="startDate" type="date" required></label>
+      <label>Scheduled times (HH:MM, comma-separated) <input name="scheduleTimes" required pattern="(?:[01]\\d|2[0-3]):[0-5]\\d(?:\\s*,\\s*(?:[01]\\d|2[0-3]):[0-5]\\d){0,7}" title="Enter 24-hour times separated by commas, such as 08:00, 20:00" placeholder="08:00, 20:00"></label>
+      <label>Start date <input name="startDate" type="date" value="${today}" required></label>
       <label>End date (optional) <input name="endDate" type="date"></label>
       <label>Duration in days (optional) <input name="durationDays" type="number" min="1" max="3650"></label>
       <label class="wide">Additional instructions <textarea name="additionalInstructions" maxlength="1000"></textarea></label>
@@ -339,7 +490,7 @@ async function prescriptionsView() {
       <div class="wide"><button class="button primary" type="submit">Check safety and create prescription</button></div>
     </form>
     <p class="muted">Prescription creation records the check result, including any unavailable or uncertain information. Review findings before making clinical decisions.</p>` : '';
-  return `${patientSelectorMarkup()}${panel('Prescription list', `${table(['Medicine', 'Instructions', 'Dates', 'Status', 'Prescriber', 'Actions'], rows)}`)}
+  return `${patientSelectorMarkup()}${panel('Prescription list', `${cards ? `<div class="rx-card-list">${cards}</div>` : empty('No prescriptions on record.')}${paginationControls('prescriptions', result.pagination)}`)}
     ${panel('Medicine information search', catalogSearch)}
     ${currentUser.role === 'doctor' ? panel('New prescription', `${createForm}`) : ''}`;
 }
@@ -383,41 +534,55 @@ async function dosesView() {
   }).join('');
   const selectedDoses = availableRows.filter((dose) => dose.localDate === calendarDate).sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
   const rows = selectedDoses.map((d) => `<article class="dose-card">
+      ${dosePillIcon()}
       <div class="dose-time">${esc(d.localTime)}</div>
       <div><div class="dose-name">${esc(d.prescription?.medicineName || 'Medicine')} ${esc(d.prescription?.strength || '')}</div><div class="dose-instructions">${esc(d.prescription?.dosageInstructions || '')}${d.overdue ? ' · Overdue' : ''}${d.note ? ` · ${esc(d.note)}` : ''}</div></div>
-      <div class="dose-card-status">${statusTag(d.status)}${currentUser.role === 'patient' && ['upcoming', 'missed'].includes(d.status) ? `<div class="dose-actions"><button class="button primary small" type="button" data-action="dose-status" data-id="${esc(d._id)}" data-status="taken">Taken</button><button class="button secondary small" type="button" data-action="dose-status" data-id="${esc(d._id)}" data-status="skipped">Skip</button></div>` : ''}</div>
+      <div class="dose-card-status">${statusTag(d.status)}${doseStatusActions(d)}</div>
     </article>`);
   const historyRows = (result.history || []).map((d) => `<tr><td>${esc(d.localDate)} ${esc(d.localTime)}</td><td>${esc(d.prescription?.medicineName || 'Medicine')}</td><td>${statusTag(d.status)}</td><td>${esc(d.note || '')}</td></tr>`);
   const adherence = result.adherence || {};
   const adherenceText = adherence.adherencePercent === null ? 'Not enough recorded outcomes to calculate.' : `${adherence.adherencePercent}% (${adherence.taken} taken / ${adherence.eligible} eligible doses)`;
   return `${patientSelectorMarkup()}
-    ${panel('Adherence summary', `<div class="score-layout">${adherenceRing(adherence.adherencePercent)}<div><strong>${esc(adherenceText)}</strong><p class="metric-note">${esc(adherence.formula || '')}</p></div></div><p class="metric-note">Timezone: ${esc(result.timezone || '—')}. Unrecorded doses are marked missed after ${esc(result.rules?.missedAfterMinutes ?? '—')} minutes.</p>`)}
+    ${panel('Adherence summary', `<div class="score-layout">${adherenceRing(adherence.adherencePercent, adherence)}<div><strong>${esc(adherenceText)}</strong><p class="metric-note">${esc(adherence.formula || '')}</p></div></div><p class="metric-note">Timezone: ${esc(result.timezone || '—')}. Unrecorded doses are marked missed after ${esc(result.rules?.missedAfterMinutes ?? '—')} minutes.</p>`)}
     ${panel('Medication schedule', `<div class="day-strip">${dayStrip}</div><div class="dose-card-list">${rows.length ? rows.join('') : empty('No doses are scheduled for this day.')}</div>`)}
-    ${panel('Upcoming', (result.upcoming || []).length ? `<ul>${result.upcoming.map((d) => `<li>${esc(d.localDate)} ${esc(d.localTime)} · ${esc(d.prescription?.medicineName || 'Medicine')}</li>`).join('')}</ul>` : empty('No upcoming doses in the next two days.'))}
+    ${panel('Upcoming', (result.upcoming || []).length ? `<ul>${result.upcoming.map((d) => `<li>${esc(d.localDate)} ${esc(d.localTime)} · ${esc(d.prescription?.medicineName || 'Medicine')}</li>`).join('')}</ul>` : empty('No upcoming doses in the next seven days.'))}
     ${panel('Recent recorded dose history', table(['Scheduled', 'Medicine', 'Status', 'Note'], historyRows))}`;
 }
 
 async function safetyView() {
   const id = await getContextId();
   if (!id) return `${patientSelectorMarkup()}${panel('Medication safety', empty('Select an authorized patient.'))}`;
-  const result = await contextData('/safety/checks');
-  const checks = Array.isArray(result) ? result : [];
+  const result = await pagedContextData('/safety/checks', 'safety');
+  const checks = result?.items || [];
   const doctorForm = currentUser.role === 'doctor' ? `<h3>Check a proposed medicine</h3><form id="safety-form" class="form-grid">
       <label>Medicine name <input name="medicineName" required maxlength="200"></label>
       <label>Active ingredients (optional; comma-separated) <input name="activeIngredients"></label>
       <div class="wide"><button class="button primary" type="submit">Run sourced check</button></div>
     </form>` : '';
-  const cards = checks.map((c) => `<article class="list-item"><h3>${esc(c.proposed?.name)} · ${statusTag(c.interactionStatus)}</h3><p>Checked ${esc(dateText(c.createdAt))} · Ingredients: ${esc(c.proposed?.ingredients?.join(', ') || 'unknown')} (${esc(c.proposed?.ingredientSource)})</p>
-    ${c.findings?.length ? `<ul>${c.findings.map((f) => `<li><strong>${esc(f.title)}</strong> — ${esc(f.detail)} <small>Source: ${esc(f.source)}</small>${f.sourceUrl ? ` <a href="${esc(f.sourceUrl)}" target="_blank" rel="noopener noreferrer">Source details</a>` : ''}</li>`).join('')}</ul>` : '<p>No findings were returned by this limited check; this is not confirmation that a combination is safe.</p>'}
-    ${c.limitations?.length ? `<p class="muted">Limitations: ${esc(c.limitations.join(' '))}</p>` : ''}
-    <p class="muted">${esc(c.disclaimer || '')}</p></article>`).join('');
+  const cards = checks.map((c) => {
+    const findings = (c.findings || []).map((f) => {
+      const allergySeverity = (f.severity || '').match(/patient-recorded:\s*(severe|moderate|mild)/i)?.[1]?.toLowerCase();
+      const severityClass = f.type === 'allergy_match' && allergySeverity === 'severe' ? 'major'
+        : f.type === 'allergy_match' && allergySeverity === 'moderate' ? 'moderate'
+          : f.type === 'missing_info' ? 'information' : 'unrated';
+      const severityLabel = severityClass === 'major' ? 'Major · patient-recorded severe allergy'
+        : severityClass === 'moderate' ? 'Moderate · patient-recorded allergy'
+          : severityClass === 'information' ? 'Information unavailable' : 'Clinical severity not rated by source';
+      return `<article class="finding-card finding-${severityClass}"><span class="severity-badge severity-${severityClass}">${esc(severityLabel)}</span><h4>${esc(f.title)}</h4><p>${esc(f.detail)}</p>${f.excerpt ? `<blockquote>${esc(f.excerpt)}</blockquote>` : ''}<small>Source: ${esc(f.source || 'Not supplied')}${f.severity ? ` · Source severity: ${esc(f.severity)}` : ''}</small>${f.sourceUrl ? ` <a href="${esc(f.sourceUrl)}" target="_blank" rel="noopener noreferrer">Source details</a>` : ''}</article>`;
+    }).join('');
+    return `<article class="safety-result-card"><div class="safety-result-head"><div><p class="eyebrow">SOURCED CHECK · ${esc(dateText(c.createdAt))}</p><h3>${esc(c.proposed?.name || 'Proposed medicine')}</h3></div>${statusTag(c.interactionStatus)}</div><p class="metric-note">Ingredients: ${esc(c.proposed?.ingredients?.join(', ') || 'unknown')} (${esc(c.proposed?.ingredientSource || 'source unavailable')})</p>
+      ${findings ? `<div class="finding-list">${findings}</div>` : '<p class="callout">No findings returned by this limited check. This is not confirmation that a combination is safe.</p>'}
+      ${c.limitations?.length ? `<p class="muted">Limitations: ${esc(c.limitations.join(' '))}</p>` : ''}
+      <p class="muted">${esc(c.disclaimer || '')}</p></article>`;
+  }).join('');
   return `${patientSelectorMarkup()}
     ${panel('Safety-check status', `<div class="callout warning">Prototype only: RxNorm provides ingredient matching; FDA label text is not a comprehensive interaction database. Missing or unavailable data is reported as such. A missing finding does not mean a medicine combination is safe. Do not start, stop, or change medicines based on this tool.</div>${doctorForm}`)}
-    ${panel('Saved safety-check results', cards ? `<div class="list">${cards}</div>` : empty('No saved safety checks yet.'))}`;
+    ${panel('Saved safety-check results', `${cards ? `<div class="safety-result-list">${cards}</div>` : empty('No saved safety checks yet.')}${paginationControls('safety', result?.pagination)}`)}`;
 }
 
 async function careView() {
-  const grants = await api('/care');
+  const result = await api(`/care?page=${pageNumber('care')}&limit=10`);
+  const grants = result.items || [];
   const patient = currentUser.role === 'patient';
   const rows = grants.map((g) => {
     const other = patient ? g.grantee : g.patient;
@@ -436,24 +601,27 @@ async function careView() {
       <label><input type="checkbox" name="viewMedicalInfo"> View allergies and history</label>
       <div class="wide"><button class="button primary" type="submit">Grant access</button></div>
     </form>` : `<h3>Request patient access</h3><form id="care-request-form" class="inline-form"><label>Patient email <input name="patientEmail" type="email" required></label><button class="button primary" type="submit">Request access</button></form><p class="muted">The patient must approve this request before any records are available.</p>`;
-  return `${panel(patient ? 'Caregiver and doctor authorizations' : 'Patient access', table(['Account', 'Role', 'Status', patient ? 'Permissions' : '', 'Actions'], rows))}
+  return `${panel(patient ? 'Caregiver and doctor authorizations' : 'Patient access', `${table(['Account', 'Role', 'Status', patient ? 'Permissions' : '', 'Actions'], rows)}${paginationControls('care', result.pagination)}`)}
     ${panel('Patient-controlled access', invite)}`;
 }
 
 async function alertsView() {
   const id = await getContextId();
   if (!id && currentUser.role !== 'patient') return `${patientSelectorMarkup()}${panel('Alerts', empty('Select a patient or request authorization.'))}`;
-  const data = await api(currentUser.role === 'patient' ? '/alerts' : `/alerts?patientId=${encodeURIComponent(id)}`);
+  const params = new URLSearchParams({ page: String(pageNumber('alerts')), limit: '10' });
+  if (currentUser.role !== 'patient') params.set('patientId', id);
+  const data = await api(`/alerts?${params}`);
   const cards = (data.alerts || []).map((a) => `<article class="list-item"><h3>${esc(a.patient?.name || 'Patient')} · ${esc(a.prescription?.medicineName || 'Medicine')}</h3><p>${esc(a.missedCount)} missed doses in ${esc(a.windowDays)} days; threshold ${esc(a.threshold)}. Created ${esc(dateText(a.createdAt))}.</p><p>Status: ${statusTag(a.status)}</p>${a.doses?.length ? `<ul>${a.doses.map((d) => `<li>${esc(d.localDate)} ${esc(d.localTime)} — ${esc(d.status)}</li>`).join('')}</ul>` : ''}${currentUser.role === 'doctor' && a.status === 'open' ? `<button class="button secondary small" type="button" data-action="resolve-alert" data-id="${esc(a._id)}">Resolve</button>` : ''}</article>`).join('');
-  return `${patientSelectorMarkup()}${panel('Missed-dose alerts', `<p class="muted">Repeated-dose threshold: ${esc(data.threshold)} within ${esc(data.windowDays)} days.</p>${cards ? `<div class="list">${cards}</div>` : empty('No alerts are visible for this account.')}`)}`;
+  return `${patientSelectorMarkup()}${panel('Missed-dose alerts', `<p class="muted">Repeated-dose threshold: ${esc(data.threshold)} within ${esc(data.windowDays)} days.</p>${cards ? `<div class="list">${cards}</div>` : empty('No alerts are visible for this account.')}${paginationControls('alerts', data.pagination)}`)}`;
 }
 
 async function historyView() {
   const id = await getContextId();
   if (!id) return `${patientSelectorMarkup()}${panel('Prescription history', empty('Select a patient.'))}`;
-  const list = await contextData('/prescriptions/history');
-  const rows = list.map((log) => `<tr><td>${esc(dateText(log.createdAt))}</td><td>${esc(log.action)}</td><td>${esc(log.medicineName)}</td><td>${esc(log.actor?.name || 'System')}</td><td>${esc((log.changes || []).map((c) => `${c.field}: ${JSON.stringify(c.from)} → ${JSON.stringify(c.to)}`).join('; ') || JSON.stringify(log.meta || {}))}</td></tr>`);
-  return `${patientSelectorMarkup()}${panel('Prescription change history', table(['When', 'Action', 'Medicine', 'Changed by', 'Details'], rows))}`;
+  const result = await pagedContextData(currentUser.role === 'patient' ? '/patients/me/audit-log' : '/prescriptions/history', 'history');
+  const list = result.items || [];
+  const rows = list.map((log) => `<tr><td>${esc(dateText(log.createdAt))}</td><td>${esc(log.action)}</td><td>${esc(log.medicineName || log.entityType)}</td><td>${esc(log.actor?.name || 'System')}</td><td>${esc((log.changes || []).map((c) => `${c.field}: ${JSON.stringify(c.from)} → ${JSON.stringify(c.to)}`).join('; ') || JSON.stringify(log.meta || {}))}</td></tr>`);
+  return `${patientSelectorMarkup()}${panel(currentUser.role === 'patient' ? 'My account and medication activity' : 'Patient activity history', `<p class="metric-note">${currentUser.role === 'patient' ? 'A record of changes made to your medication and profile, and access events involving your care.' : 'Recorded patient-related changes visible to your account.'}</p>${table(['When', 'Action', 'Record', 'Changed by', 'Details'], rows)}${paginationControls('history', result.pagination)}`)}`;
 }
 
 function facilitiesView() {
@@ -471,7 +639,8 @@ function medicineSearchView() {
 }
 
 async function adminView() {
-  const doctors = await api(`/admin/doctors?status=${encodeURIComponent(doctorFilter)}`);
+  const doctorsResult = await api(`/admin/doctors?status=${encodeURIComponent(doctorFilter)}&page=${pageNumber('admin')}&limit=10`);
+  const doctors = doctorsResult.items || [];
   const rows = doctors.map((doctor) => `<tr>
     <td><strong>${esc(doctor.user?.name || 'Account')}</strong><br><small>${esc(doctor.user?.email || '')}</small></td>
     <td>${esc(doctor.licenseNumber || 'Not provided')}</td>
@@ -480,7 +649,7 @@ async function adminView() {
     <td>${statusTag(doctor.verificationStatus)}</td>
     <td>${doctor.verificationStatus !== 'verified' ? `<button class="button primary small" type="button" data-action="doctor-review" data-id="${esc(doctor.user?._id)}" data-status="verified">Verify</button>` : ''}${doctor.verificationStatus !== 'rejected' ? `<button class="button danger small" type="button" data-action="doctor-review" data-id="${esc(doctor.user?._id)}" data-status="rejected">Reject</button>` : ''}</td>
   </tr>`);
-  return `${panel('Doctor verification queue', `<div class="section-toolbar"><p class="metric-note">Review professional registration details before granting a doctor access to patient records.</p><label>Show<select id="doctor-filter"><option value="pending" ${doctorFilter === 'pending' ? 'selected' : ''}>Pending review</option><option value="verified" ${doctorFilter === 'verified' ? 'selected' : ''}>Verified</option><option value="rejected" ${doctorFilter === 'rejected' ? 'selected' : ''}>Rejected</option></select></label></div>${table(['Doctor', 'License', 'Specialty', 'Organization', 'Status', 'Decision'], rows)}`)}
+  return `${panel('Doctor verification queue', `<div class="section-toolbar"><p class="metric-note">Review professional registration details before granting a doctor access to patient records.</p><label>Show<select id="doctor-filter"><option value="pending" ${doctorFilter === 'pending' ? 'selected' : ''}>Pending review</option><option value="verified" ${doctorFilter === 'verified' ? 'selected' : ''}>Verified</option><option value="rejected" ${doctorFilter === 'rejected' ? 'selected' : ''}>Rejected</option></select></label></div>${table(['Doctor', 'License', 'Specialty', 'Organization', 'Status', 'Decision'], rows)}${paginationControls('admin', doctorsResult.pagination)}`)}
     ${panel('Review standards', `<p class="metric-note">Only verify accounts after checking the submitted license through the appropriate professional registry. This demo does not perform external license validation.</p>`)}`;
 }
 
@@ -506,19 +675,36 @@ async function searchFacilities({ q, type, radius }, coordinates = null) {
   try {
     const result = await api(`/facilities?${params}`);
     const { lat, lon } = result.center;
-    const latOffset = Number(radius) / 111000;
-    const lonOffset = latOffset / Math.max(Math.cos(lat * Math.PI / 180), 0.2);
-    const mapParams = new URLSearchParams({
-      bbox: `${lon - lonOffset},${lat - latOffset},${lon + lonOffset},${lat + latOffset}`,
-      layer: 'mapnik',
-      marker: `${lat},${lon}`,
-    });
     const facilities = result.results || [];
     resultsBox.innerHTML = `<p class="muted">${esc(result.source)} · ${esc(result.note)}</p>
       <div class="facility-layout">
         <div class="facility-list">${facilities.length ? `<div class="list">${facilities.map((facility) => `<article class="list-item"><h3>${esc(facility.name)} ${statusTag(facility.type)}</h3><p>${esc(facility.address || 'Address not listed')}${facility.distanceKm !== undefined ? ` · ${esc(facility.distanceKm)} km` : ''}</p><p>${facility.phone ? `Phone: ${esc(facility.phone)} · ` : ''}${facility.openingHours ? `Hours: ${esc(facility.openingHours)}` : ''}</p><p><a href="${esc(facility.directionsUrl)}" target="_blank" rel="noopener noreferrer">Directions</a> · <a href="${esc(facility.osmUrl)}" target="_blank" rel="noopener noreferrer">OpenStreetMap</a></p></article>`).join('')}</div>` : empty('No facilities were found in this area.')}</div>
-        <iframe class="facility-map" title="OpenStreetMap location map" loading="lazy" referrerpolicy="no-referrer" src="https://www.openstreetmap.org/export/embed.html?${esc(mapParams.toString())}"></iframe>
+        <div id="facility-map" class="facility-map" role="region" aria-label="Map of nearby facilities"></div>
       </div>`;
+    if (facilityMap) facilityMap.remove();
+    const mapElement = document.querySelector('#facility-map');
+    if (!window.L || !mapElement) {
+      resultsBox.insertAdjacentHTML('beforeend', '<div class="callout warning">The interactive map could not load. Facility results and directions remain available.</div>');
+      return;
+    }
+    facilityMap = window.L.map(mapElement).setView([lat, lon], Number(radius) <= 3000 ? 14 : Number(radius) <= 5000 ? 13 : 12);
+    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
+    }).addTo(facilityMap);
+    window.L.marker([lat, lon]).addTo(facilityMap).bindPopup('Search location');
+    const markers = [];
+    for (const facility of facilities) {
+      if (!Number.isFinite(Number(facility.lat)) || !Number.isFinite(Number(facility.lon))) continue;
+      const marker = window.L.marker([Number(facility.lat), Number(facility.lon)]).addTo(facilityMap);
+      marker.bindPopup(`<strong>${esc(facility.name)}</strong><br>${esc(facility.type)}<br>${esc(facility.address || 'Address not listed')}`);
+      markers.push(marker);
+    }
+    if (markers.length) {
+      const group = window.L.featureGroup(markers);
+      facilityMap.fitBounds(group.getBounds().pad(0.12), { maxZoom: 15 });
+    }
+    setTimeout(() => facilityMap?.invalidateSize(), 0);
   } catch (error) {
     resultsBox.innerHTML = `<div class="callout warning">${esc(error.message)}</div>`;
     throw error;
@@ -526,9 +712,19 @@ async function searchFacilities({ q, type, radius }, coordinates = null) {
 }
 
 async function notificationsView() {
-  const data = await api('/notifications');
-  const rows = data.items.map((n) => `<article class="list-item"><h3>${esc(n.title)} ${n.readAt ? '<span class="muted">(read)</span>' : statusTag('unread')}</h3><p>${esc(n.message)}</p><small>${esc(dateText(n.createdAt))} · In-app: ${esc(n.channels?.inApp || 'enabled')} · email: ${esc(n.channels?.email || 'not configured')} · SMS: ${esc(n.channels?.sms || 'not configured')}</small>${!n.readAt ? `<p><button class="button secondary small" type="button" data-action="read-notification" data-id="${esc(n._id)}">Mark read</button></p>` : ''}</article>`).join('');
-  return `${panel(`Notifications (${data.unread} unread)`, `<p class="muted">Email and SMS are only enabled when configured on the server.</p><button class="button secondary small" type="button" data-action="read-all">Mark all read</button>${rows ? `<div class="list">${rows}</div>` : empty('No notifications yet.')}`)}`;
+  const data = await api(`/notifications?page=${pageNumber('notifications')}&limit=10`);
+  updateNotificationBadge(data.unread);
+  currentUser.unreadNotifications = data.unread;
+  const preferences = currentUser.notificationPreferences || {};
+  const rows = data.items.map((n) => `<article class="notif-item ${n.readAt ? '' : 'unread'}"><span class="notif-icon" aria-hidden="true">${iconSvg('notifications')}</span><div class="notif-body"><div class="notif-title">${esc(n.title)} ${n.readAt ? '<span class="muted">(read)</span>' : statusTag('unread')}</div><p class="notif-msg">${esc(n.message)}</p><div class="notif-meta">${esc(dateText(n.createdAt))} · In-app: ${esc(n.channels?.inApp || 'enabled')} · email: ${esc(n.channels?.email || 'not configured')} · SMS: ${esc(n.channels?.sms || 'not configured')}</div>${!n.readAt ? `<button class="button secondary small" type="button" data-action="read-notification" data-id="${esc(n._id)}">Mark read</button>` : ''}</div></article>`).join('');
+  const settings = `<form id="notification-preferences-form" class="form-grid notification-preferences">
+    <label class="checkbox-label"><input type="checkbox" name="email" ${preferences.email ? 'checked' : ''}> Send email notifications</label>
+    <label class="checkbox-label"><input type="checkbox" name="sms" ${preferences.sms ? 'checked' : ''}> Send SMS notifications</label>
+    <label class="wide">Mobile number for SMS <input name="notificationPhone" type="tel" value="${esc(currentUser.notificationPhone || '')}" placeholder="+14155550123" autocomplete="tel"><small>Use international E.164 format. Enabling SMS is optional; standard carrier charges may apply.</small></label>
+    <div class="wide"><button class="button secondary" type="submit">Save delivery preferences</button></div>
+  </form>`;
+  return `${panel('Delivery preferences', `<p class="muted">In-app notices remain enabled. Email and SMS require server-side provider configuration and your explicit opt-in.</p>${settings}`)}
+    ${panel(`Notifications (${data.unread} unread)`, `<button class="button secondary small" type="button" data-action="read-all">Mark all read</button>${rows ? `<div class="list">${rows}</div>` : empty('No notifications yet.')}${paginationControls('notifications', data.pagination)}`)}`;
 }
 
 function formObject(form) { return Object.fromEntries(new FormData(form).entries()); }
@@ -537,13 +733,24 @@ function setBusy(form, busy) { const button = form.querySelector('[type="submit"
 
 async function handleAuthSubmit(event) {
   const form = event.target;
-  if (!['login-form', 'register-form'].includes(form.id)) return false;
+  if (!['login-form', 'register-form', 'forgot-form', 'reset-form'].includes(form.id)) return false;
   event.preventDefault();
   setBusy(form, true);
   try {
     const values = formObject(form);
-    const user = await api(`/auth/${form.id === 'login-form' ? 'login' : 'register'}`, { method: 'POST', body: values });
-    await enterApp(user.user);
+    if (form.id === 'login-form' || form.id === 'register-form') {
+      const result = await api(`/auth/${form.id === 'login-form' ? 'login' : 'register'}`, { method: 'POST', body: values });
+      await enterApp(result.user);
+    } else if (form.id === 'forgot-form') {
+      const result = await api('/auth/forgot-password', { method: 'POST', body: values });
+      document.querySelector('#reset-form [name="email"]').value = values.email;
+      setAuthTab('reset');
+      showMessage(result.message, 'success');
+    } else {
+      const result = await api('/auth/reset-password', { method: 'POST', body: values });
+      setAuthTab('login');
+      showMessage(result.message, 'success');
+    }
   } catch (error) {
     showMessage(error.message, 'error');
   } finally { setBusy(form, false); }
@@ -605,6 +812,19 @@ async function handleSubmit(event) {
       renderMedicineResults(result.results, box, `${result.source}. ${result.stockNote}`);
     } else if (form.id === 'facility-form') {
       await searchFacilities(values);
+    } else if (form.id === 'notification-preferences-form') {
+      const result = await api('/auth/notification-preferences', {
+        method: 'PUT',
+        body: {
+          email: form.elements.email.checked,
+          sms: form.elements.sms.checked,
+          notificationPhone: values.notificationPhone || '',
+        },
+      });
+      currentUser.notificationPreferences = result.notificationPreferences;
+      currentUser.notificationPhone = result.notificationPhone;
+      showMessage('Notification preferences saved.', 'success');
+      await renderSection('notifications');
     }
   } catch (error) {
     showMessage(error.message, 'error');
@@ -615,8 +835,21 @@ async function handleAction(button) {
   const action = button.dataset.action;
   const id = button.dataset.id;
   if (action === 'refresh') return renderSection();
+  if (action === 'list-page') {
+    const key = button.dataset.list;
+    listPages.set(key, Number(button.dataset.page));
+    await renderSection(activeSection);
+    return;
+  }
+  if (action === 'wizard-next' || action === 'wizard-prev') {
+    const form = button.closest('#prescription-form');
+    const active = [...form.querySelectorAll('[data-wizard-panel]')].findIndex((panel) => !panel.classList.contains('hidden'));
+    setPrescriptionWizardStep(active + (action === 'wizard-next' ? 1 : -1));
+    return;
+  }
   if (action === 'select-patient') {
     selectedPatientId = id;
+    listPages.clear();
     await renderSection('overview');
     return;
   }
@@ -684,11 +917,20 @@ async function handleAction(button) {
     return;
   }
   if (action === 'dose-status') {
-    const note = window.prompt('Optional note for this dose (leave blank if none):') || '';
-    await api(`/doses/${encodeURIComponent(id)}/status`, { method: 'POST', body: { status: button.dataset.status, note } });
-    showMessage('Dose status saved.', 'success');
-    await renderSection('doses');
-    return;
+    const doseActions = button.closest('.dose-actions');
+    doseActions?.querySelectorAll('button').forEach((actionButton) => { actionButton.disabled = true; });
+    try {
+      await api(`/doses/${encodeURIComponent(id)}/status`, { method: 'POST', body: { status: button.dataset.status } });
+      showMessage('Dose status saved.', 'success');
+      await renderSection(activeSection);
+      return;
+    } catch (err) {
+      showMessage(err.message, 'error');
+      await renderSection(activeSection);
+      return;
+    } finally {
+      doseActions?.querySelectorAll('button').forEach((actionButton) => { actionButton.disabled = false; });
+    }
   }
   if (action === 'discontinue') {
     if (!window.confirm(`Discontinue ${button.dataset.name}? This records the change and cancels future scheduled doses.`)) return;
@@ -765,6 +1007,8 @@ document.querySelectorAll('[data-auth-tab]').forEach((button) => button.addEvent
 document.querySelector('#register-role').addEventListener('change', (event) => document.querySelector('#doctor-fields').classList.toggle('hidden', event.target.value !== 'doctor'));
 document.querySelector('#login-form').addEventListener('submit', handleSubmit);
 document.querySelector('#register-form').addEventListener('submit', handleSubmit);
+document.querySelector('#forgot-form').addEventListener('submit', handleSubmit);
+document.querySelector('#reset-form').addEventListener('submit', handleSubmit);
 document.querySelector('#content').addEventListener('submit', handleSubmit);
 document.querySelector('#main-nav').addEventListener('click', (event) => {
   const button = event.target.closest('[data-section]');
@@ -789,6 +1033,7 @@ document.querySelector('#content').addEventListener('change', (event) => {
   }
   if (event.target.id === 'doctor-filter') {
     doctorFilter = event.target.value;
+    listPages.set('admin', 1);
     renderSection('admin');
   }
 });
@@ -837,6 +1082,11 @@ document.querySelector('#logout-button').addEventListener('click', async () => {
   browserReminderTimer = null;
 });
 document.querySelector('#notification-link').addEventListener('click', () => renderSection('notifications'));
+document.querySelector('#mobile-nav-toggle').addEventListener('click', () => {
+  const open = appView.classList.toggle('sidebar-open');
+  document.querySelector('#mobile-nav-toggle').setAttribute('aria-expanded', String(open));
+});
+document.querySelector('#sidebar-backdrop').addEventListener('click', closeMobileSidebar);
 
 api('/auth/me').then((result) => enterApp(result.user)).catch(() => {
   currentUser = null;
