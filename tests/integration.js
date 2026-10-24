@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 
 process.env.NODE_ENV = 'test';
-process.env.MONGODB_DB = `caretrack_integration_${Date.now()}_${process.pid}`;
+process.env.MONGODB_DB = `MediKit_integration_${Date.now()}_${process.pid}`;
 process.env.SESSION_SECRET = 'integration-test-session-secret-not-for-production';
 process.env.SMTP_URL = '';
 process.env.SMTP_FROM = '';
@@ -211,38 +211,25 @@ async function run() {
     assert.ok(patientPrescriptions.json.data.some((rx) => rx._id === createPrescription.json.data.prescription._id));
 
     const prescriptionId = createPrescription.json.data.prescription._id;
-    const now = Date.now();
+    const now = new Date();
+    const lateToday = new Date(now);
+    lateToday.setUTCHours(23, 55, 0, 0);
+    const sameDayStart = lateToday.getTime() - now.getTime() > 2 * 60000
+      ? new Date(lateToday.getTime() - 2 * 60000)
+      : new Date(now.getTime() - 5 * 60000);
+    const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 12));
+    const makeDose = (scheduledAt) => ({
+      patient: patient.user._id,
+      prescription: prescriptionId,
+      scheduledAt,
+      localDate: scheduledAt.toISOString().slice(0, 10),
+      localTime: scheduledAt.toISOString().slice(11, 16),
+    });
     const doseRecords = await DoseRecord.create([
-      ...[30, 40].map((minutes) => {
-        const scheduledAt = new Date(now + minutes * 60000);
-        return {
-          patient: patient.user._id,
-          prescription: prescriptionId,
-          scheduledAt,
-          localDate: scheduledAt.toISOString().slice(0, 10),
-          localTime: scheduledAt.toISOString().slice(11, 16),
-        };
-      }),
-      (() => {
-        const scheduledAt = new Date(now + 120 * 60000);
-        return {
-          patient: patient.user._id,
-          prescription: prescriptionId,
-          scheduledAt,
-          localDate: scheduledAt.toISOString().slice(0, 10),
-          localTime: scheduledAt.toISOString().slice(11, 16),
-        };
-      })(),
-      (() => {
-        const scheduledAt = new Date(now - (config.missedAfterMinutes + 10) * 60000);
-        return {
-          patient: patient.user._id,
-          prescription: prescriptionId,
-          scheduledAt,
-          localDate: scheduledAt.toISOString().slice(0, 10),
-          localTime: scheduledAt.toISOString().slice(11, 16),
-        };
-      })(),
+      makeDose(sameDayStart),
+      makeDose(new Date(sameDayStart.getTime() + 60000)),
+      makeDose(tomorrow),
+      makeDose(new Date(now.getTime() - (config.missedAfterMinutes + 10) * 60000)),
     ]);
     for (const [index, status] of ['taken', 'skipped'].entries()) {
       const result = await request(baseUrl, `/doses/${doseRecords[index]._id}/status`, {
@@ -258,8 +245,8 @@ async function run() {
       cookie: patient.cookie,
       body: { status: 'taken' },
     });
-    assert.equal(futureTaken.response.status, 200, futureTaken.json.error?.message);
-    assert.equal(futureTaken.json.data.status, 'taken');
+    assert.equal(futureTaken.response.status, 409);
+    assert.match(futureTaken.json.error.message, /only be marked on its scheduled day/);
     const schedule = await request(baseUrl, '/doses', { cookie: patient.cookie });
     assert.equal(schedule.response.status, 200, schedule.json.error?.message);
     const missedDose = schedule.json.data.history.find((dose) => dose._id === String(doseRecords[3]._id));
@@ -274,16 +261,16 @@ async function run() {
     assert.equal(correctedMissedDose.json.data.status, 'taken');
     const refreshedSchedule = await request(baseUrl, '/doses', { cookie: patient.cookie });
     assert.equal(refreshedSchedule.response.status, 200, refreshedSchedule.json.error?.message);
-    assert.equal(refreshedSchedule.json.data.adherence.taken, 3, JSON.stringify(refreshedSchedule.json.data.adherence));
+    assert.equal(refreshedSchedule.json.data.adherence.taken, 2, JSON.stringify(refreshedSchedule.json.data.adherence));
     assert.equal(refreshedSchedule.json.data.adherence.skipped, 1, JSON.stringify(refreshedSchedule.json.data.adherence));
-    assert.equal(refreshedSchedule.json.data.adherence.eligible, 4, JSON.stringify(refreshedSchedule.json.data.adherence));
-    assert.equal(refreshedSchedule.json.data.adherence.adherencePercent, 75, JSON.stringify(refreshedSchedule.json.data.adherence));
+    assert.equal(refreshedSchedule.json.data.adherence.eligible, 3, JSON.stringify(refreshedSchedule.json.data.adherence));
+    assert.equal(refreshedSchedule.json.data.adherence.adherencePercent, 66.7, JSON.stringify(refreshedSchedule.json.data.adherence));
     const persistedDoseStatuses = await Promise.all(doseRecords.map((dose) => DoseRecord.findById(dose._id).lean()));
-    assert.deepEqual(persistedDoseStatuses.map((dose) => dose.status).sort(), ['skipped', 'taken', 'taken', 'taken']);
+    assert.deepEqual(persistedDoseStatuses.map((dose) => dose.status).sort(), ['skipped', 'taken', 'taken', 'upcoming']);
     assert.equal(persistedDoseStatuses[0].history.length, 1);
     assert.equal(persistedDoseStatuses[1].history.length, 1);
-    assert.equal(persistedDoseStatuses[2].status, 'taken');
-    assert.equal(persistedDoseStatuses[2].history.length, 1);
+    assert.equal(persistedDoseStatuses[2].status, 'upcoming');
+    assert.equal(persistedDoseStatuses[2].history.length, 0);
     assert.equal(persistedDoseStatuses[3].history.length, 2);
     assert.deepEqual(
       persistedDoseStatuses[3].history.map((entry) => entry.to),

@@ -40,7 +40,7 @@ async function notify(recipients, { type, title, message, patient = null, alert 
       if (!config.emailConfigPresent) channels.email = 'not_configured';
       else {
         try {
-          await delivery.sendEmail(user.email, `CareTrack: ${title}`, message);
+          await delivery.sendEmail(user.email, `MediKit: ${title}`, message);
           channels.email = 'delivered';
         } catch (err) {
           channels.email = 'failed';

@@ -107,6 +107,9 @@ async function recordStatus(dose, newStatus, user, note = '') {
   const allowed = TRANSITIONS[dose.status] || [];
   if (!allowed.includes(newStatus)) throw new HttpError(409, `Cannot change a ${dose.status} dose to ${newStatus}`);
   if (dose.status === 'missed' && !dose.autoMarked) throw new HttpError(409, 'A dose you marked as missed cannot be changed');
+  const tz = await patientTz(dose.patient);
+  const today = localDate(new Date(), tz);
+  if (dose.localDate > today) throw new HttpError(409, 'A dose can only be marked on its scheduled day');
   const minutesUntil = (dose.scheduledAt.getTime() - Date.now()) / 60000;
   if (newStatus === 'missed' && minutesUntil > 0) throw new HttpError(409, 'A dose cannot be marked missed before its scheduled time');
 
@@ -128,14 +131,11 @@ async function recordStatus(dose, newStatus, user, note = '') {
  */
 async function adherence(patientId, { days = config.doseHistoryDays, prescriptionId = null } = {}) {
   const now = new Date();
+  const tz = await patientTz(patientId);
+  const today = localDate(now, tz);
   const match = {
     patient: new mongoose.Types.ObjectId(String(patientId)),
-    scheduledAt: { $gte: new Date(now.getTime() - days * 86400000) },
-    $or: [
-      { scheduledAt: { $lte: now } },
-      { status: 'taken' },
-      { status: 'skipped' },
-    ],
+    localDate: { $gte: addDays(today, -days + 1), $lte: today },
   };
   if (prescriptionId) match.prescription = new mongoose.Types.ObjectId(String(prescriptionId));
   const rows = await DoseRecord.aggregate([{ $match: match }, { $group: { _id: '$status', n: { $sum: 1 } } }]);
@@ -152,7 +152,7 @@ async function adherence(patientId, { days = config.doseHistoryDays, prescriptio
     pending: c.upcoming || 0,
     eligible,
     adherencePercent: eligible ? Math.round((taken / eligible) * 1000) / 10 : null,
-    formula: 'taken / (taken + missed + skipped) for recorded doses in the history window; pending and cancelled doses are excluded',
+    formula: 'taken / (taken + missed + skipped) for recorded doses in the past history window through today; future dates, pending and cancelled doses are excluded',
   };
 }
 

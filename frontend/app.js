@@ -201,8 +201,9 @@ function dosePillIcon() {
   return '<span class="dose-pill-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1a5 5 0 0 1 0-7.1l7.1-7.1a5 5 0 0 1 7.1 7.1L12 19.1a5 5 0 0 1-7.1 0Z"/><path d="m8.4 8.4 7.1 7.1"/></svg></span>';
 }
 
-function doseStatusActions(dose) {
+function doseStatusActions(dose, today) {
   if (!['upcoming', 'missed'].includes(dose.status)) return '';
+  if (dose.status === 'upcoming' && dose.localDate > today) return '<span class="dose-action-hint">Available on the scheduled day.</span>';
   if (currentUser.role !== 'patient') return '<span class="dose-action-hint">Sign in as the patient to record this dose</span>';
   if (dose.status === 'missed' && !dose.autoMarked) return '';
   return `<div class="dose-actions" aria-label="Record dose status"><button class="button primary small" type="button" data-action="dose-status" data-id="${esc(dose._id)}" data-status="taken">Mark taken</button><button class="button secondary small" type="button" data-action="dose-status" data-id="${esc(dose._id)}" data-status="skipped">Skip dose</button></div>`;
@@ -357,7 +358,7 @@ async function overviewView() {
     </div>
     <div class="overview-grid">
       <div class="overview-main">
-        ${panel('Today’s schedule', `${todaysDoses.length ? `<div class="dose-card-list">${todaysDoses.map((dose) => `<article class="dose-card">${dosePillIcon()}<div class="dose-time">${esc(dose.localTime)}</div><div><div class="dose-name">${esc(dose.prescription?.medicineName || 'Medicine')}</div><div class="dose-instructions">${esc(dose.prescription?.dosageInstructions || '')}</div></div><div class="dose-card-status">${statusTag(dose.status)}${doseStatusActions(dose)}</div></article>`).join('')}</div>` : empty('No doses scheduled for today.')}${panelActions('doses', 'View full schedule')}`)}
+        ${panel('Today’s schedule', `${todaysDoses.length ? `<div class="dose-card-list">${todaysDoses.map((dose) => `<article class="dose-card">${dosePillIcon()}<div class="dose-time">${esc(dose.localTime)}</div><div><div class="dose-name">${esc(dose.prescription?.medicineName || 'Medicine')}</div><div class="dose-instructions">${esc(dose.prescription?.dosageInstructions || '')}</div></div><div class="dose-card-status">${statusTag(dose.status)}${doseStatusActions(dose, schedule.today)}</div></article>`).join('')}</div>` : empty('No doses scheduled for today.')}${panelActions('doses', 'View full schedule')}`)}
         ${panel('Medication safety', `<div class="safety-banner"><span class="safety-mark">!</span><span>Automated checks are a limited prototype, not a comprehensive interaction checker. Review sourced findings with a qualified professional; never change medication based only on this tool.</span></div>${panelActions('safety', 'Review safety checks')}`)}
       </div>
       <div class="overview-side">
@@ -537,7 +538,7 @@ async function dosesView() {
       ${dosePillIcon()}
       <div class="dose-time">${esc(d.localTime)}</div>
       <div><div class="dose-name">${esc(d.prescription?.medicineName || 'Medicine')} ${esc(d.prescription?.strength || '')}</div><div class="dose-instructions">${esc(d.prescription?.dosageInstructions || '')}${d.overdue ? ' · Overdue' : ''}${d.note ? ` · ${esc(d.note)}` : ''}</div></div>
-      <div class="dose-card-status">${statusTag(d.status)}${doseStatusActions(d)}</div>
+      <div class="dose-card-status">${statusTag(d.status)}${doseStatusActions(d, result.today)}</div>
     </article>`);
   const historyRows = (result.history || []).map((d) => `<tr><td>${esc(d.localDate)} ${esc(d.localTime)}</td><td>${esc(d.prescription?.medicineName || 'Medicine')}</td><td>${statusTag(d.status)}</td><td>${esc(d.note || '')}</td></tr>`);
   const adherence = result.adherence || {};

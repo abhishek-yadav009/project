@@ -36,8 +36,8 @@ async function sendSms(to, text) {
 async function sendPasswordReset(email, code) {
   await sendEmail(
     email,
-    'CareTrack password reset code',
-    `Your CareTrack password reset code is ${code}. It expires in 15 minutes. If you did not request this, you can ignore this email.`,
+    'MediKit password reset code',
+    `Your MediKit password reset code is ${code}. It expires in 15 minutes. If you did not request this, you can ignore this email.`,
   );
 }
 
