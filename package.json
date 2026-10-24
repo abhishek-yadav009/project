@@ -1,0 +1,24 @@
+{
+  "name": "healthcare-mvp",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@12.3.4",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --env-file-if-exists=.env.development.local backend/server.js",
+    "start": "node --env-file-if-exists=.env backend/server.js",
+    "seed": "node --env-file-if-exists=.env --env-file-if-exists=.env.development.local backend/seed.js",
+    "test": "node --test",
+    "smoke": "node --env-file-if-exists=.env tests/smoke.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "connect-mongo": "^6.0.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
+    "express-session": "^1.19.0",
+    "helmet": "^8.3.0",
+    "mongoose": "^9.11.3"
+  }
+}

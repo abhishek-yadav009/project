@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f8fb">
+    <meta name="description" content="CareTrack medication schedule, prescriptions, and patient-controlled caregiver coordination.">
+    <title>CareTrack | Medication care</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="CareTrack home"><span class="brand-mark">+</span> CareTrack</a>
+      <span class="header-note">Medication care, connected</span>
+    </header>
+    <main>
+      <section id="auth-view" class="auth-wrap" aria-live="polite">
+        <div class="auth-intro">
+          <p class="eyebrow">HEALTHCARE MVP</p>
+          <h1>Medication care, connected.</h1>
+          <p>Manage prescriptions, dose history, patient-approved access, and sourced safety checks in one place.</p>
+          <p class="notice">This demo is not a clinical service. Automated checks do not replace a healthcare professional.</p>
+        </div>
+        <div class="auth-card">
+          <div class="auth-tabs">
+            <button type="button" class="tab active" data-auth-tab="login">Log in</button>
+            <button type="button" class="tab" data-auth-tab="register">Create account</button>
+          </div>
+          <form id="login-form" class="form-stack">
+            <label>Email <input name="email" type="email" autocomplete="email" required></label>
+            <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+            <button class="button primary" type="submit">Log in</button>
+          </form>
+          <form id="register-form" class="form-stack hidden">
+            <label>Full name <input name="name" autocomplete="name" minlength="2" maxlength="100" required></label>
+            <label>Email <input name="email" type="email" autocomplete="email" required></label>
+            <label>Password <input name="password" type="password" autocomplete="new-password" minlength="8" required><small>At least 8 characters, including a letter and a number.</small></label>
+            <label>Account type
+              <select name="role" id="register-role">
+                <option value="patient">Patient</option>
+                <option value="doctor">Doctor (verification required)</option>
+                <option value="caregiver">Caregiver</option>
+              </select>
+            </label>
+            <div id="doctor-fields" class="form-stack hidden">
+              <label>Professional license number <input name="licenseNumber" maxlength="50"></label>
+              <label>Specialty <input name="specialty" maxlength="100"></label>
+              <label>Organization <input name="organization" maxlength="150"></label>
+            </div>
+            <button class="button primary" type="submit">Create account</button>
+          </form>
+          <p id="auth-message" class="message" role="status"></p>
+        </div>
+      </section>
+      <section id="app-view" class="app-shell hidden">
+        <aside class="app-sidebar">
+          <div class="sidebar-label">WORKSPACE</div>
+          <nav id="main-nav" class="main-nav" aria-label="Main navigation"></nav>
+          <div class="sidebar-note">
+            <span class="sidebar-note-icon">+</span>
+            <strong>Care, made clearer</strong>
+            <p>Keep medication routines and care teams in sync.</p>
+          </div>
+          <div class="sidebar-safety">For demonstration only. Not a medical device.</div>
+        </aside>
+        <div class="app-main">
+          <div class="app-toolbar">
+            <div class="toolbar-context"><span class="toolbar-dot"></span><span id="toolbar-role">Secure workspace</span></div>
+            <div class="toolbar-actions">
+              <button id="notification-link" class="icon-button" type="button" aria-label="Open notifications" title="Notifications">♧</button>
+              <span id="account-chip" class="account-chip"></span>
+              <button id="logout-button" class="button secondary" type="button">Log out</button>
+            </div>
+          </div>
+          <div class="app-heading">
+            <div><p class="eyebrow" id="section-eyebrow">YOUR CARE</p><h1 id="welcome-title">Your care dashboard</h1><p id="welcome-subtitle" class="muted"></p></div>
+            <div id="heading-actions" class="heading-actions"></div>
+          </div>
+          <div id="app-message" class="message" role="status" aria-live="polite"></div>
+          <section id="content" class="content" aria-live="polite"></section>
+        </div>
+      </section>
+    </main>
+    <footer>CareTrack is a demonstration application. Do not enter real patient data or use it for clinical decisions.</footer>
+  </body>
+</html>
